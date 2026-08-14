@@ -1,0 +1,22 @@
+{
+  "name": "token-lab",
+  "version": "1.0.0",
+  "description": "Count characters, words, and Claude input tokens for text/code files",
+  "type": "module",
+  "bin": {
+    "token-lab": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "count": "node dist/index.js count",
+    "compare": "node dist/index.js compare"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.74.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  }
+}
