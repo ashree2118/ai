@@ -1,16 +1,18 @@
 {
   "name": "token-lab",
   "version": "1.0.0",
-  "description": "Count characters, words, and Claude input tokens for text/code files",
+  "description": "Anthropic SDK tools: token counting and multi-turn conversations",
   "type": "module",
   "bin": {
-    "token-lab": "./dist/index.js"
+    "token-lab": "./dist/index.js",
+    "chat": "./dist/chat.js"
   },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "count": "node dist/index.js count",
-    "compare": "node dist/index.js compare"
+    "compare": "node dist/index.js compare",
+    "chat": "node dist/chat.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0"
