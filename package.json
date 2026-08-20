@@ -5,14 +5,16 @@
   "type": "module",
   "bin": {
     "token-lab": "./dist/index.js",
-    "chat": "./dist/chat.js"
+    "chat": "./dist/chat.js",
+    "stream": "./dist/stream.js"
   },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "count": "node dist/index.js count",
     "compare": "node dist/index.js compare",
-    "chat": "node dist/chat.js"
+    "chat": "node dist/chat.js",
+    "stream": "node dist/stream.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0"
