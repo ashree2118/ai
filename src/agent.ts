@@ -1,120 +1,16 @@
 #!/usr/bin/env node
 
-import { exec } from "node:child_process";
-import { readdir, readFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
-import { promisify } from "node:util";
 import Anthropic from "@anthropic-ai/sdk";
 import type {
   Message,
   MessageParam,
-  Tool,
   ToolResultBlockParam,
   ToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages/messages";
+import { runTool, TOOLS } from "./tools.js";
 
-const execAsync = promisify(exec);
 const DEFAULT_MODEL = "claude-sonnet-4-20250514";
 const MAX_TURNS = 20;
-
-const TOOLS: Tool[] = [
-  {
-    name: "list_files",
-    description: "List files and directories at a path.",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "Directory path" },
-      },
-      required: ["path"],
-    },
-  },
-  {
-    name: "read_file",
-    description: "Read a text file and return its contents.",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "File path" },
-      },
-      required: ["path"],
-    },
-  },
-  {
-    name: "run_command",
-    description: "Run a shell command in the workspace and return stdout/stderr.",
-    input_schema: {
-      type: "object",
-      properties: {
-        command: { type: "string", description: "Shell command to run" },
-      },
-      required: ["command"],
-    },
-  },
-];
-
-function workspaceRoot(): string {
-  return resolve(process.cwd());
-}
-
-function safePath(path: string): string {
-  const root = workspaceRoot();
-  const target = resolve(root, path);
-  const rel = relative(root, target);
-  if (rel.startsWith("..") || isAbsolute(rel)) {
-    throw new Error(`path escapes workspace: ${path}`);
-  }
-  return target;
-}
-
-function asRecord(input: unknown): Record<string, unknown> {
-  if (typeof input === "object" && input !== null && !Array.isArray(input)) {
-    return input as Record<string, unknown>;
-  }
-  throw new Error("tool input must be an object");
-}
-
-function asString(value: unknown, field: string): string {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`${field} must be a non-empty string`);
-  }
-  return value;
-}
-
-async function runTool(name: string, input: unknown): Promise<string> {
-  const args = asRecord(input);
-
-  switch (name) {
-    case "list_files": {
-      const dir = safePath(asString(args.path, "path"));
-      const entries = await readdir(dir, { withFileTypes: true });
-      return entries
-        .map((entry) => `${entry.isDirectory() ? "[dir]" : "[file]"} ${entry.name}`)
-        .join("\n");
-    }
-    case "read_file": {
-      const file = safePath(asString(args.path, "path"));
-      return await readFile(file, "utf8");
-    }
-    case "run_command": {
-      const command = asString(args.command, "command");
-      try {
-        const { stdout, stderr } = await execAsync(command, {
-          cwd: workspaceRoot(),
-          maxBuffer: 1024 * 1024,
-          timeout: 30_000,
-        });
-        return [stdout, stderr].filter(Boolean).join("\n") || "(no output)";
-      } catch (err) {
-        const error = err as { stdout?: string; stderr?: string; message?: string };
-        const parts = [error.stdout, error.stderr, error.message].filter(Boolean);
-        return parts.join("\n");
-      }
-    }
-    default:
-      throw new Error(`unknown tool: ${name}`);
-  }
-}
 
 function extractText(content: Message["content"]): string {
   return content
