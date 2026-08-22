@@ -7,7 +7,8 @@
     "token-lab": "./dist/index.js",
     "chat": "./dist/chat.js",
     "stream": "./dist/stream.js",
-    "prompt-compare": "./dist/prompt-compare.js"
+    "prompt-compare": "./dist/prompt-compare.js",
+    "agent": "./dist/agent.js"
   },
   "scripts": {
     "build": "tsc",
@@ -16,7 +17,8 @@
     "compare": "node dist/index.js compare",
     "chat": "node dist/chat.js",
     "stream": "node dist/stream.js",
-    "prompt-compare": "node dist/prompt-compare.js"
+    "prompt-compare": "node dist/prompt-compare.js",
+    "agent": "node dist/agent.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0"
