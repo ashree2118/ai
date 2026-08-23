@@ -3,15 +3,19 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { Tool } from "@anthropic-ai/sdk/resources/messages/messages";
+import {
+  ToolInputError,
+  assertNoExtraKeys,
+  assertOptionalBoolean,
+  assertOptionalEnum,
+  assertOptionalInteger,
+  assertString,
+  isRecord,
+} from "./validation.js";
+
+export { ToolInputError } from "./validation.js";
 
 const execAsync = promisify(exec);
-
-export class ToolInputError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ToolInputError";
-  }
-}
 
 export type ListFilesInput = {
   path: string;
@@ -138,78 +142,6 @@ function safePath(path: string): string {
   return target;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function assertNoExtraKeys(
-  input: Record<string, unknown>,
-  allowed: readonly string[],
-): void {
-  for (const key of Object.keys(input)) {
-    if (!allowed.includes(key)) {
-      throw new ToolInputError(`unexpected field: ${key}`);
-    }
-  }
-}
-
-function assertString(
-  input: Record<string, unknown>,
-  field: string,
-  minLength = 1,
-): string {
-  const value = input[field];
-  if (typeof value !== "string") {
-    throw new ToolInputError(`${field} must be a string`);
-  }
-  if (value.length < minLength) {
-    throw new ToolInputError(`${field} must be at least ${minLength} character(s)`);
-  }
-  return value;
-}
-
-function assertOptionalBoolean(
-  input: Record<string, unknown>,
-  field: string,
-): boolean | undefined {
-  const value = input[field];
-  if (value === undefined) return undefined;
-  if (typeof value !== "boolean") {
-    throw new ToolInputError(`${field} must be a boolean`);
-  }
-  return value;
-}
-
-function assertOptionalEnum<T extends string>(
-  input: Record<string, unknown>,
-  field: string,
-  values: readonly T[],
-): T | undefined {
-  const value = input[field];
-  if (value === undefined) return undefined;
-  if (typeof value !== "string" || !values.includes(value as T)) {
-    throw new ToolInputError(`${field} must be one of: ${values.join(", ")}`);
-  }
-  return value as T;
-}
-
-function assertOptionalInteger(
-  input: Record<string, unknown>,
-  field: string,
-  min: number,
-  max: number,
-): number | undefined {
-  const value = input[field];
-  if (value === undefined) return undefined;
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    throw new ToolInputError(`${field} must be an integer`);
-  }
-  if (value < min || value > max) {
-    throw new ToolInputError(`${field} must be between ${min} and ${max}`);
-  }
-  return value;
-}
-
 export function validateListFilesInput(input: unknown): ListFilesInput {
   if (!isRecord(input)) throw new ToolInputError("input must be an object");
   assertNoExtraKeys(input, ["path", "include_hidden", "sort"]);
@@ -252,7 +184,7 @@ export function validateRunCommandInput(input: unknown): RunCommandInput {
   return validated;
 }
 
-export function validateToolInput(name: string, input: unknown): void {
+export function validateWorkspaceToolInput(name: string, input: unknown): void {
   switch (name) {
     case "list_files":
       validateListFilesInput(input);
@@ -264,7 +196,7 @@ export function validateToolInput(name: string, input: unknown): void {
       validateRunCommandInput(input);
       return;
     default:
-      throw new ToolInputError(`unknown tool: ${name}`);
+      throw new ToolInputError(`unknown workspace tool: ${name}`);
   }
 }
 
@@ -341,8 +273,11 @@ async function runCommand(input: RunCommandInput): Promise<string> {
   }
 }
 
-export async function runTool(name: string, input: unknown): Promise<string> {
-  validateToolInput(name, input);
+export async function runWorkspaceTool(
+  name: string,
+  input: unknown,
+): Promise<string> {
+  validateWorkspaceToolInput(name, input);
 
   switch (name) {
     case "list_files":
@@ -352,6 +287,10 @@ export async function runTool(name: string, input: unknown): Promise<string> {
     case "run_command":
       return runCommand(validateRunCommandInput(input));
     default:
-      throw new ToolInputError(`unknown tool: ${name}`);
+      throw new ToolInputError(`unknown workspace tool: ${name}`);
   }
 }
+
+// Backward-compatible alias for existing imports.
+export const validateToolInput = validateWorkspaceToolInput;
+export const runTool = runWorkspaceTool;

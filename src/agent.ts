@@ -7,10 +7,14 @@ import type {
   ToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages/messages";
 import { executeTools } from "./tool-loop.js";
-import { TOOLS } from "./tools.js";
+import { TOOLS } from "./tool-registry.js";
 
 const DEFAULT_MODEL = "claude-sonnet-4-20250514";
 const MAX_TURNS = 20;
+
+const SYSTEM_PROMPT = `You are a coding agent with workspace tools (list_files, read_file, run_command) and GitHub tools (github_get_issue, github_list_files, github_read_file, github_create_branch, github_write_file, github_create_pr).
+
+Use workspace tools for local files and shell commands. Use GitHub tools for remote repository operations. GitHub tools require GITHUB_TOKEN and can default owner/repo from GITHUB_OWNER and GITHUB_REPO.`;
 
 function extractText(content: Message["content"]): string {
   return content
@@ -31,8 +35,7 @@ async function runAgent(task: string, model: string): Promise<string> {
     const response = await client.messages.create({
       model,
       max_tokens: 4096,
-      system:
-        "You are a coding agent with filesystem and shell tools. Use tools when needed, then give a concise final answer.",
+      system: SYSTEM_PROMPT,
       tools: TOOLS,
       messages,
     });

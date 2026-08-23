@@ -112,7 +112,7 @@ test("validateToolInput dispatches by tool name", () => {
   );
   assert.throws(
     () => validateToolInput("missing_tool", { path: "src" }),
-    (err: Error) => err.message === "unknown tool: missing_tool",
+    (err: Error) => err.message === "unknown workspace tool: missing_tool",
   );
 });
 

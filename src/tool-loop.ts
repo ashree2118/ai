@@ -2,7 +2,7 @@ import type {
   ToolResultBlockParam,
   ToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages/messages";
-import { runTool } from "./tools.js";
+import { runTool } from "./tool-registry.js";
 
 function dependencyIds(
   toolUse: ToolUseBlock,

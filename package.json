@@ -19,10 +19,11 @@
     "stream": "node dist/stream.js",
     "prompt-compare": "node dist/prompt-compare.js",
     "agent": "node dist/agent.js",
-    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js"
+    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js dist/github/toolkit.test.js dist/tool-registry.test.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.74.0"
+    "@anthropic-ai/sdk": "^0.74.0",
+    "@octokit/rest": "^22.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
