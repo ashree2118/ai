@@ -4,10 +4,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import type {
   Message,
   MessageParam,
-  ToolResultBlockParam,
   ToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages/messages";
-import { runTool, TOOLS } from "./tools.js";
+import { executeTools } from "./tool-loop.js";
+import { TOOLS } from "./tools.js";
 
 const DEFAULT_MODEL = "claude-sonnet-4-20250514";
 const MAX_TURNS = 20;
@@ -21,33 +21,6 @@ function extractText(content: Message["content"]): string {
 
 function isToolUseBlock(block: Message["content"][number]): block is ToolUseBlock {
   return block.type === "tool_use";
-}
-
-async function executeTools(toolUses: ToolUseBlock[]): Promise<ToolResultBlockParam[]> {
-  const results: ToolResultBlockParam[] = [];
-
-  for (const toolUse of toolUses) {
-    try {
-      const output = await runTool(toolUse.name, toolUse.input);
-      results.push({
-        type: "tool_result",
-        tool_use_id: toolUse.id,
-        content: output,
-      });
-      console.error(`tool ${toolUse.name} ok`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      results.push({
-        type: "tool_result",
-        tool_use_id: toolUse.id,
-        content: message,
-        is_error: true,
-      });
-      console.error(`tool ${toolUse.name} error: ${message}`);
-    }
-  }
-
-  return results;
 }
 
 async function runAgent(task: string, model: string): Promise<string> {

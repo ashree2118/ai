@@ -19,7 +19,7 @@
     "stream": "node dist/stream.js",
     "prompt-compare": "node dist/prompt-compare.js",
     "agent": "node dist/agent.js",
-    "test": "npm run build && node --test dist/tools.test.js"
+    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0"
