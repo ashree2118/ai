@@ -1,4 +1,5 @@
-const EMBEDDING_MODEL = "text-embedding-3-small";
+export const EMBEDDING_MODEL = "text-embedding-3-small";
+export const EMBEDDING_DIMENSION = 1536;
 
 type EmbeddingResponse = {
   data: Array<{ embedding: number[]; index: number }>;
@@ -31,4 +32,10 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
   return payload.data
     .sort((a, b) => a.index - b.index)
     .map((item) => item.embedding);
+}
+
+export async function embedQuery(text: string): Promise<number[]> {
+  const [vector] = await embedTexts([text]);
+  if (!vector) throw new Error("embedding API returned no vector");
+  return vector;
 }

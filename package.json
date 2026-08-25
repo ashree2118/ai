@@ -10,7 +10,8 @@
     "prompt-compare": "./dist/prompt-compare.js",
     "agent": "./dist/agent.js",
     "embedding-lab": "./dist/embedding-lab.js",
-    "chunk-lab": "./dist/chunk-lab.js"
+    "chunk-lab": "./dist/chunk-lab.js",
+    "rag-cli": "./dist/rag-cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -23,14 +24,17 @@
     "agent": "node dist/agent.js",
     "embedding-lab": "node dist/embedding-lab.js",
     "chunk-lab": "node dist/chunk-lab.js",
-    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js dist/github/toolkit.test.js dist/tool-registry.test.js dist/embeddings/math.test.js dist/chunker/chunker.test.js"
+    "rag-cli": "node dist/rag-cli.js",
+    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js dist/github/toolkit.test.js dist/tool-registry.test.js dist/embeddings/math.test.js dist/chunker/chunker.test.js dist/rag/store.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
     "@octokit/rest": "^22.0.0",
+    "pg": "^8.16.0",
     "typescript": "^5.8.2"
   },
   "devDependencies": {
-    "@types/node": "^22.13.10"
+    "@types/node": "^22.13.10",
+    "@types/pg": "^8.15.2"
   }
 }
