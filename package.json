@@ -11,7 +11,8 @@
     "agent": "./dist/agent.js",
     "embedding-lab": "./dist/embedding-lab.js",
     "chunk-lab": "./dist/chunk-lab.js",
-    "rag-cli": "./dist/rag-cli.js"
+    "rag-cli": "./dist/rag-cli.js",
+    "eval-cli": "./dist/eval-cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -25,7 +26,8 @@
     "embedding-lab": "node dist/embedding-lab.js",
     "chunk-lab": "node dist/chunk-lab.js",
     "rag-cli": "node dist/rag-cli.js",
-    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js dist/github/toolkit.test.js dist/tool-registry.test.js dist/embeddings/math.test.js dist/chunker/chunker.test.js dist/rag/store.test.js"
+    "eval-cli": "node dist/eval-cli.js",
+    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js dist/github/toolkit.test.js dist/tool-registry.test.js dist/embeddings/math.test.js dist/chunker/chunker.test.js dist/rag/store.test.js dist/eval/metrics.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
