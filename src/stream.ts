@@ -13,6 +13,7 @@ type StreamResult = {
   usage: MessageDeltaUsage | null;
 };
 
+//this functiontakes arguments from the command line.
 function parseArgs(argv: string[]): { prompt: string; system?: string } {
   const parts: string[] = [];
   let system: string | undefined;
@@ -61,24 +62,25 @@ async function streamPrompt(
   let usage: MessageDeltaUsage | null = null;
   let completed = false;
 
+  //This is the actual API call
   const response = await client.messages.create({
     model,
     max_tokens: 1024,
     system,
     messages: [{ role: "user", content: prompt }],
-    stream: true,
+    stream: true, //Without streaming, you'd wait for the entire response
   });
 
   try {
     for await (const event of response) {
       if (event.type === "content_block_delta") {
         if (event.delta.type === "text_delta") {
-          process.stdout.write(event.delta.text);
+          process.stdout.write(event.delta.text); //stdout.write instead of console.log because that adds a new line
         }
         continue;
       }
 
-      if (event.type === "message_delta") {
+      if (event.type === "message_delta") { //contains metadata about the message, including usage and stop reason
         stopReason = event.delta.stop_reason;
         usage = event.usage;
         continue;

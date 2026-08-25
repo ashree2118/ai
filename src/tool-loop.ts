@@ -20,6 +20,7 @@ function dependencyIds(
   return dependsOn;
 }
 
+//scans each tool's input for other tool_use_id references. Independent tools land in the same group; dependent ones wait for later groups.
 export function groupToolUsesByDependency(
   toolUses: ToolUseBlock[],
 ): ToolUseBlock[][] {

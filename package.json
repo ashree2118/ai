@@ -8,7 +8,8 @@
     "chat": "./dist/chat.js",
     "stream": "./dist/stream.js",
     "prompt-compare": "./dist/prompt-compare.js",
-    "agent": "./dist/agent.js"
+    "agent": "./dist/agent.js",
+    "embedding-lab": "./dist/embedding-lab.js"
   },
   "scripts": {
     "build": "tsc",
@@ -19,7 +20,8 @@
     "stream": "node dist/stream.js",
     "prompt-compare": "node dist/prompt-compare.js",
     "agent": "node dist/agent.js",
-    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js dist/github/toolkit.test.js dist/tool-registry.test.js"
+    "embedding-lab": "node dist/embedding-lab.js",
+    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js dist/github/toolkit.test.js dist/tool-registry.test.js dist/embeddings/math.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
