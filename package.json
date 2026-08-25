@@ -9,7 +9,8 @@
     "stream": "./dist/stream.js",
     "prompt-compare": "./dist/prompt-compare.js",
     "agent": "./dist/agent.js",
-    "embedding-lab": "./dist/embedding-lab.js"
+    "embedding-lab": "./dist/embedding-lab.js",
+    "chunk-lab": "./dist/chunk-lab.js"
   },
   "scripts": {
     "build": "tsc",
@@ -21,14 +22,15 @@
     "prompt-compare": "node dist/prompt-compare.js",
     "agent": "node dist/agent.js",
     "embedding-lab": "node dist/embedding-lab.js",
-    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js dist/github/toolkit.test.js dist/tool-registry.test.js dist/embeddings/math.test.js"
+    "chunk-lab": "node dist/chunk-lab.js",
+    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js dist/github/toolkit.test.js dist/tool-registry.test.js dist/embeddings/math.test.js dist/chunker/chunker.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
-    "@octokit/rest": "^22.0.0"
+    "@octokit/rest": "^22.0.0",
+    "typescript": "^5.8.2"
   },
   "devDependencies": {
-    "@types/node": "^22.13.10",
-    "typescript": "^5.8.2"
+    "@types/node": "^22.13.10"
   }
 }
