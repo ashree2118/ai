@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import { ReactAgent } from "./react-agent.js";
+import { runReactAgent } from "./react-agent.js";
 
 function parseTask(argv: string[]): string {
   const task = argv.join(" ").trim();
   if (!task) {
-    console.error("Usage: agent <task>");
+    console.error("Usage: react-agent <task>");
     process.exit(1);
   }
   return task;
@@ -18,8 +18,7 @@ async function main() {
   }
 
   const task = parseTask(process.argv.slice(2));
-  const agent = new ReactAgent();
-  const result = await agent.run(task);
+  const result = await runReactAgent(task);
   console.log(result.text);
 }
 

@@ -100,3 +100,12 @@ export function formatEvalReport(summary: EvalSummary): string {
 
   return lines.join("\n");
 }
+
+
+//Is chunking bad?
+//Is the issue too vague?
+//Are metadata fields missing?
+//Is the embedding model appropriate for code?
+//Is top-K too small?
+//Would keyword search help?
+//Does the relevant code use an exact identifier?
