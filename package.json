@@ -13,7 +13,8 @@
     "chunk-lab": "./dist/chunk-lab.js",
     "rag-cli": "./dist/rag-cli.js",
     "eval-cli": "./dist/eval-cli.js",
-    "react-agent": "./dist/react-agent-cli.js"
+    "react-agent": "./dist/react-agent-cli.js",
+    "context-agent": "./dist/context-agent-cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -29,7 +30,8 @@
     "rag-cli": "node dist/rag-cli.js",
     "eval-cli": "node dist/eval-cli.js",
     "react-agent": "node dist/react-agent-cli.js",
-    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js dist/github/toolkit.test.js dist/tool-registry.test.js dist/embeddings/math.test.js dist/chunker/chunker.test.js dist/rag/store.test.js dist/eval/metrics.test.js dist/react-agent.test.js"
+    "context-agent": "node dist/context-agent-cli.js",
+    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js dist/github/toolkit.test.js dist/tool-registry.test.js dist/embeddings/math.test.js dist/chunker/chunker.test.js dist/rag/store.test.js dist/eval/metrics.test.js dist/react-agent.test.js dist/context/builder.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",

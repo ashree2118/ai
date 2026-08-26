@@ -20,6 +20,7 @@ const DEFAULT_MODEL = "claude-sonnet-4-20250514";
 
 export type ReactAgentOptions = {
   system?: string;
+  dynamicSystem?: (messages: readonly MessageParam[]) => string;
   model?: string;
   maxTokens?: number;
   maxIterations?: number;
@@ -55,6 +56,7 @@ export class ReactAgent {
   private readonly maxTokens: number;
   private readonly maxIterations: number;
   private readonly system: string;
+  private readonly dynamicSystem?: (messages: readonly MessageParam[]) => string;
   private readonly tools: Tool[];
   private readonly log: (message: string) => void;
   private messages: MessageParam[] = [];
@@ -65,6 +67,7 @@ export class ReactAgent {
     this.maxTokens = options.maxTokens ?? 4096;
     this.maxIterations = options.maxIterations ?? 20;
     this.system = options.system ?? DEFAULT_REACT_SYSTEM_PROMPT;
+    this.dynamicSystem = options.dynamicSystem;
     this.tools = options.tools ?? TOOLS;
     this.log = options.log ?? ((message) => console.error(message));
   }
@@ -75,6 +78,10 @@ export class ReactAgent {
 
   reset(): void {
     this.messages = [];
+  }
+
+  private resolveSystem(): string {
+    return this.dynamicSystem?.(this.messages) ?? this.system;
   }
 
   async run(task: string): Promise<ReactAgentResult> {
@@ -90,7 +97,7 @@ export class ReactAgent {
       const response = await this.client.messages.create({
         model: this.model,
         max_tokens: this.maxTokens,
-        system: this.system,
+        system: this.resolveSystem(),
         tools: this.tools,
         messages: this.messages,
       });
