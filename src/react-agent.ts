@@ -6,6 +6,15 @@ import type {
   ToolUseBlock,
   Usage,
 } from "@anthropic-ai/sdk/resources/messages/messages";
+import {
+  addUsage,
+  emptyTokenUsage,
+  exceedsTokenBudget,
+  formatTokenUsage,
+  partialReasonForIterations,
+  partialReasonForTokenBudget,
+  type TokenUsageTotals,
+} from "./guardrails.js";
 import { executeTools } from "./tool-loop.js";
 import { TOOLS } from "./tool-registry.js";
 
@@ -17,6 +26,21 @@ Available GitHub tools: github_get_issue, github_list_files, github_read_file, g
 Use workspace tools for local files and shell commands. Use GitHub tools for remote repository work. GitHub tools require GITHUB_TOKEN and can default owner/repo from GITHUB_OWNER and GITHUB_REPO.`;
 
 const DEFAULT_MODEL = "claude-sonnet-4-20250514";
+const DEFAULT_MAX_ITERATIONS = 20;
+
+function readMaxIterations(option?: number): number {
+  if (option !== undefined) return option;
+  const fromEnv = process.env.REACT_MAX_ITERATIONS;
+  if (fromEnv) return Number(fromEnv);
+  return DEFAULT_MAX_ITERATIONS;
+}
+
+function readMaxTokenBudget(option?: number): number | undefined {
+  if (option !== undefined) return option;
+  const fromEnv = process.env.REACT_MAX_TOKEN_BUDGET;
+  if (!fromEnv) return undefined;
+  return Number(fromEnv);
+}
 
 export type ReactAgentOptions = {
   system?: string;
@@ -24,6 +48,7 @@ export type ReactAgentOptions = {
   model?: string;
   maxTokens?: number;
   maxIterations?: number;
+  maxTokenBudget?: number;
   tools?: Tool[];
   client?: Anthropic;
   log?: (message: string) => void;
@@ -34,6 +59,9 @@ export type ReactAgentResult = {
   iterations: number;
   stopReason: string;
   usage: Usage;
+  tokenUsage: TokenUsageTotals;
+  completed: boolean;
+  partialReason?: string;
   messages: MessageParam[];
 };
 
@@ -55,6 +83,7 @@ export class ReactAgent {
   private readonly model: string;
   private readonly maxTokens: number;
   private readonly maxIterations: number;
+  private readonly maxTokenBudget?: number;
   private readonly system: string;
   private readonly dynamicSystem?: (messages: readonly MessageParam[]) => string;
   private readonly tools: Tool[];
@@ -65,7 +94,8 @@ export class ReactAgent {
     this.client = options.client ?? new Anthropic();
     this.model = options.model ?? process.env.ANTHROPIC_MODEL ?? DEFAULT_MODEL;
     this.maxTokens = options.maxTokens ?? 4096;
-    this.maxIterations = options.maxIterations ?? 20;
+    this.maxIterations = readMaxIterations(options.maxIterations);
+    this.maxTokenBudget = readMaxTokenBudget(options.maxTokenBudget);
     this.system = options.system ?? DEFAULT_REACT_SYSTEM_PROMPT;
     this.dynamicSystem = options.dynamicSystem;
     this.tools = options.tools ?? TOOLS;
@@ -84,15 +114,52 @@ export class ReactAgent {
     return this.dynamicSystem?.(this.messages) ?? this.system;
   }
 
+  private buildPartialResult(input: {
+    text: string;
+    iterations: number;
+    stopReason: string;
+    usage: Usage;
+    tokenUsage: TokenUsageTotals;
+    partialReason: string;
+  }): ReactAgentResult {
+    this.log(`[guardrails] ${input.partialReason}`);
+    this.log(`[guardrails] ${formatTokenUsage(input.tokenUsage)}`);
+
+    return {
+      text: input.text,
+      iterations: input.iterations,
+      stopReason: input.stopReason,
+      usage: input.usage,
+      tokenUsage: input.tokenUsage,
+      completed: false,
+      partialReason: input.partialReason,
+      messages: this.messages,
+    };
+  }
+
   async run(task: string): Promise<ReactAgentResult> {
     this.messages.push({ role: "user", content: task });
 
     let lastUsage!: Usage;
-    let stopReason = "max_iterations";
-    let finalText = "";
+    let tokenUsage = emptyTokenUsage();
+    let lastAssistantText = "";
 
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
-      this.log(`[react] iteration ${iteration}`);
+      if (exceedsTokenBudget(tokenUsage, this.maxTokenBudget)) {
+        return this.buildPartialResult({
+          text: lastAssistantText,
+          iterations: iteration - 1,
+          stopReason: "max_token_budget",
+          usage: lastUsage,
+          tokenUsage,
+          partialReason: partialReasonForTokenBudget(
+            tokenUsage,
+            this.maxTokenBudget!,
+          ),
+        });
+      }
+
+      this.log(`[react] iteration ${iteration}/${this.maxIterations}`);
 
       const response = await this.client.messages.create({
         model: this.model,
@@ -103,21 +170,38 @@ export class ReactAgent {
       });
 
       lastUsage = response.usage;
-      stopReason = response.stop_reason ?? "unknown";
+      tokenUsage = addUsage(tokenUsage, response.usage);
+      const stopReason = response.stop_reason ?? "unknown";
+      lastAssistantText = extractText(response.content);
       this.messages.push({ role: "assistant", content: response.content });
 
       this.log(
-        `[react] llm stop_reason=${stopReason} input=${response.usage.input_tokens} output=${response.usage.output_tokens}`,
+        `[react] llm stop_reason=${stopReason} ${formatTokenUsage(tokenUsage)}`,
       );
 
+      if (exceedsTokenBudget(tokenUsage, this.maxTokenBudget)) {
+        return this.buildPartialResult({
+          text: lastAssistantText,
+          iterations: iteration,
+          stopReason: "max_token_budget",
+          usage: lastUsage,
+          tokenUsage,
+          partialReason: partialReasonForTokenBudget(
+            tokenUsage,
+            this.maxTokenBudget!,
+          ),
+        });
+      }
+
       if (response.stop_reason !== "tool_use") {
-        finalText = extractText(response.content);
         this.log(`[react] final response after ${iteration} iteration(s)`);
         return {
-          text: finalText,
+          text: lastAssistantText,
           iterations: iteration,
           stopReason,
           usage: lastUsage,
+          tokenUsage,
+          completed: true,
           messages: this.messages,
         };
       }
@@ -132,7 +216,17 @@ export class ReactAgent {
       this.log(`[react] tool_result sent for ${toolResults.length} tool call(s)`);
     }
 
-    throw new Error(`[react] stopped after ${this.maxIterations} iterations`);
+    return this.buildPartialResult({
+      text: lastAssistantText,
+      iterations: this.maxIterations,
+      stopReason: "max_iterations",
+      usage: lastUsage,
+      tokenUsage,
+      partialReason: partialReasonForIterations(
+        this.maxIterations,
+        this.maxIterations,
+      ),
+    });
   }
 }
 

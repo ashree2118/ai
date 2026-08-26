@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { exitCodeForAgentResult, printAgentResult } from "./agent-output.js";
 import { buildUserTask, createContextBuilder } from "./context/gather.js";
 import { ReactAgent } from "./react-agent.js";
 
@@ -8,6 +9,8 @@ type CliOptions = {
   issueNumber?: number;
   issueText?: string;
   ragTopK: number;
+  maxIterations?: number;
+  maxTokenBudget?: number;
 };
 
 function parseArgs(argv: string[]): CliOptions {
@@ -15,6 +18,8 @@ function parseArgs(argv: string[]): CliOptions {
   let issueNumber: number | undefined;
   let issueText: string | undefined;
   let ragTopK = 5;
+  let maxIterations: number | undefined;
+  let maxTokenBudget: number | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
@@ -30,6 +35,14 @@ function parseArgs(argv: string[]): CliOptions {
       ragTopK = Number(argv[++i]);
       continue;
     }
+    if (arg === "--max-iterations" && argv[i + 1]) {
+      maxIterations = Number(argv[++i]);
+      continue;
+    }
+    if (arg === "--max-token-budget" && argv[i + 1]) {
+      maxTokenBudget = Number(argv[++i]);
+      continue;
+    }
     parts.push(arg);
   }
 
@@ -37,11 +50,14 @@ function parseArgs(argv: string[]): CliOptions {
   if (!task) {
     console.error(`Usage:
   context-agent <task> [--issue <number>] [--issue-text "..."] [--rag-top <k>]
+                     [--max-iterations N] [--max-token-budget N]
 
 Environment:
-  ANTHROPIC_API_KEY   Required
-  DATABASE_URL        Optional, for RAG retrieval
-  GITHUB_TOKEN        Optional, when using --issue`);
+  ANTHROPIC_API_KEY        Required
+  DATABASE_URL             Optional, for RAG retrieval
+  GITHUB_TOKEN             Optional, when using --issue
+  REACT_MAX_ITERATIONS     Optional default iteration limit
+  REACT_MAX_TOKEN_BUDGET   Optional default token budget`);
     process.exit(1);
   }
 
@@ -55,7 +71,7 @@ Environment:
     throw new Error("--rag-top must be a positive integer");
   }
 
-  return { task, issueNumber, issueText, ragTopK };
+  return { task, issueNumber, issueText, ragTopK, maxIterations, maxTokenBudget };
 }
 
 async function main() {
@@ -74,12 +90,15 @@ async function main() {
 
   const agent = new ReactAgent({
     dynamicSystem: (messages) => contextBuilder.buildSystem(messages),
+    maxIterations: options.maxIterations,
+    maxTokenBudget: options.maxTokenBudget,
     log: (message) => console.error(message),
   });
 
   console.error("[context] injected system sections: instructions, issue, repo, rag, tool-history");
   const result = await agent.run(buildUserTask(options.task));
-  console.log(result.text);
+  printAgentResult(result);
+  process.exit(exitCodeForAgentResult(result));
 }
 
 main().catch((err) => {

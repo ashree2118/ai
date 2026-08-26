@@ -1,14 +1,33 @@
 #!/usr/bin/env node
 
+import { exitCodeForAgentResult, printAgentResult } from "./agent-output.js";
 import { ReactAgent } from "./react-agent.js";
 
-function parseTask(argv: string[]): string {
-  const task = argv.join(" ").trim();
+function parseArgs(argv: string[]): { task: string; maxIterations?: number; maxTokenBudget?: number } {
+  const parts: string[] = [];
+  let maxIterations: number | undefined;
+  let maxTokenBudget: number | undefined;
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (arg === "--max-iterations" && argv[i + 1]) {
+      maxIterations = Number(argv[++i]);
+      continue;
+    }
+    if (arg === "--max-token-budget" && argv[i + 1]) {
+      maxTokenBudget = Number(argv[++i]);
+      continue;
+    }
+    parts.push(arg);
+  }
+
+  const task = parts.join(" ").trim();
   if (!task) {
-    console.error("Usage: agent <task>");
+    console.error("Usage: agent <task> [--max-iterations N] [--max-token-budget N]");
     process.exit(1);
   }
-  return task;
+
+  return { task, maxIterations, maxTokenBudget };
 }
 
 async function main() {
@@ -17,10 +36,11 @@ async function main() {
     process.exit(1);
   }
 
-  const task = parseTask(process.argv.slice(2));
-  const agent = new ReactAgent();
+  const { task, maxIterations, maxTokenBudget } = parseArgs(process.argv.slice(2));
+  const agent = new ReactAgent({ maxIterations, maxTokenBudget });
   const result = await agent.run(task);
-  console.log(result.text);
+  printAgentResult(result);
+  process.exit(exitCodeForAgentResult(result));
 }
 
 main().catch((err) => {
