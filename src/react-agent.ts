@@ -17,6 +17,7 @@ import {
 } from "./guardrails.js";
 import { executeTools } from "./tool-loop.js";
 import { TOOLS } from "./tool-registry.js";
+import type { AgentTrace } from "./trace/agent-trace.js";
 
 export const DEFAULT_REACT_SYSTEM_PROMPT = `You are a ReAct coding agent. Reason about the task, call tools when needed, observe tool results, and continue until you can give a final answer.
 
@@ -52,6 +53,7 @@ export type ReactAgentOptions = {
   tools?: Tool[];
   client?: Anthropic;
   log?: (message: string) => void;
+  trace?: AgentTrace;
 };
 
 export type ReactAgentResult = {
@@ -88,6 +90,7 @@ export class ReactAgent {
   private readonly dynamicSystem?: (messages: readonly MessageParam[]) => string;
   private readonly tools: Tool[];
   private readonly log: (message: string) => void;
+  private readonly trace?: AgentTrace;
   private messages: MessageParam[] = [];
 
   constructor(options: ReactAgentOptions = {}) {
@@ -100,6 +103,7 @@ export class ReactAgent {
     this.dynamicSystem = options.dynamicSystem;
     this.tools = options.tools ?? TOOLS;
     this.log = options.log ?? ((message) => console.error(message));
+    this.trace = options.trace;
   }
 
   get history(): readonly MessageParam[] {
@@ -125,7 +129,7 @@ export class ReactAgent {
     this.log(`[guardrails] ${input.partialReason}`);
     this.log(`[guardrails] ${formatTokenUsage(input.tokenUsage)}`);
 
-    return {
+    const result = {
       text: input.text,
       iterations: input.iterations,
       stopReason: input.stopReason,
@@ -135,6 +139,8 @@ export class ReactAgent {
       partialReason: input.partialReason,
       messages: this.messages,
     };
+    this.trace?.finish(result);
+    return result;
   }
 
   async run(task: string): Promise<ReactAgentResult> {
@@ -159,6 +165,7 @@ export class ReactAgent {
         });
       }
 
+      this.trace?.startIteration(iteration);
       this.log(`[react] iteration ${iteration}/${this.maxIterations}`);
 
       const response = await this.client.messages.create({
@@ -174,6 +181,14 @@ export class ReactAgent {
       const stopReason = response.stop_reason ?? "unknown";
       lastAssistantText = extractText(response.content);
       this.messages.push({ role: "assistant", content: response.content });
+
+      this.trace?.recordLlmResponse({
+        assistantText: lastAssistantText,
+        stopReason,
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        cumulativeTokens: tokenUsage,
+      });
 
       this.log(
         `[react] llm stop_reason=${stopReason} ${formatTokenUsage(tokenUsage)}`,
@@ -195,7 +210,7 @@ export class ReactAgent {
 
       if (response.stop_reason !== "tool_use") {
         this.log(`[react] final response after ${iteration} iteration(s)`);
-        return {
+        const finalResult = {
           text: lastAssistantText,
           iterations: iteration,
           stopReason,
@@ -204,6 +219,8 @@ export class ReactAgent {
           completed: true,
           messages: this.messages,
         };
+        this.trace?.finish(finalResult);
+        return finalResult;
       }
 
       const toolUses = extractToolUses(response.content);
@@ -211,7 +228,10 @@ export class ReactAgent {
         `[react] tools requested (${toolUses.length}): ${toolUses.map((tool) => tool.name).join(", ")}`,
       );
 
-      const toolResults = await executeTools(toolUses);
+      const toolResults = await executeTools(toolUses, {
+        iteration,
+        trace: this.trace,
+      });
       this.messages.push({ role: "user", content: toolResults });
       this.log(`[react] tool_result sent for ${toolResults.length} tool call(s)`);
     }

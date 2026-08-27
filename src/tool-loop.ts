@@ -2,7 +2,13 @@ import type {
   ToolResultBlockParam,
   ToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages/messages";
+import type { AgentTrace } from "./trace/agent-trace.js";
 import { runTool } from "./tool-registry.js";
+
+export type ExecuteToolsOptions = {
+  iteration?: number;
+  trace?: AgentTrace;
+};
 
 function dependencyIds(
   toolUse: ToolUseBlock,
@@ -73,7 +79,19 @@ function toToolResult(
 
 async function executeToolGroup(
   toolUses: ToolUseBlock[],
+  options: ExecuteToolsOptions = {},
 ): Promise<ToolResultBlockParam[]> {
+  const iteration = options.iteration ?? 0;
+
+  for (const toolUse of toolUses) {
+    options.trace?.recordToolCall({
+      iteration,
+      toolUseId: toolUse.id,
+      name: toolUse.name,
+      input: toolUse.input,
+    });
+  }
+
   const settled = await Promise.allSettled(
     toolUses.map(async (toolUse) => runTool(toolUse.name, toolUse.input)),
   );
@@ -83,6 +101,13 @@ async function executeToolGroup(
 
     if (result.status === "fulfilled") {
       console.error(`tool ${toolUse.name} ok`);
+      options.trace?.recordToolResult({
+        iteration,
+        toolUseId: toolUse.id,
+        name: toolUse.name,
+        ok: true,
+        output: result.value,
+      });
       return toToolResult(toolUse, result.value);
     }
 
@@ -91,18 +116,26 @@ async function executeToolGroup(
         ? result.reason.message
         : String(result.reason);
     console.error(`tool ${toolUse.name} error: ${message}`);
+    options.trace?.recordToolResult({
+      iteration,
+      toolUseId: toolUse.id,
+      name: toolUse.name,
+      ok: false,
+      output: message,
+    });
     return toToolResult(toolUse, message, true);
   });
 }
 
 export async function executeTools(
   toolUses: ToolUseBlock[],
+  options: ExecuteToolsOptions = {},
 ): Promise<ToolResultBlockParam[]> {
   const groups = groupToolUsesByDependency(toolUses);
   const resultsById = new Map<string, ToolResultBlockParam>();
 
   for (const group of groups) {
-    const groupResults = await executeToolGroup(group);
+    const groupResults = await executeToolGroup(group, options);
     for (const result of groupResults) {
       resultsById.set(result.tool_use_id, result);
     }
