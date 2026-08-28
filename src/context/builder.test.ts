@@ -15,6 +15,7 @@ test("buildContextPrompt renders all required sections", () => {
     githubIssue: "#12 Fix parser",
     repositoryStructure: "src/\n  agent.ts",
     ragResults: "1. src/agent.ts",
+    episodicMemory: "1. [bug_fix] similarity=0.80",
     toolHistory: "(none yet)",
   });
 
@@ -22,6 +23,7 @@ test("buildContextPrompt renders all required sections", () => {
   assert.match(prompt, /## GitHub Issue/);
   assert.match(prompt, /## Repository Structure/);
   assert.match(prompt, /## Retrieved Code Context/);
+  assert.match(prompt, /## Similar Past Episodes/);
   assert.match(prompt, /## Tool History/);
   assert.match(prompt, /Fix parser/);
 });
@@ -64,6 +66,7 @@ test("ContextBuilder refreshes tool history from message state", () => {
     githubIssue: "issue",
     repositoryStructure: "src/",
     ragResults: "(none)",
+    episodicMemory: "(no similar past episodes)",
   });
 
   const before = builder.buildSystem([]);

@@ -1,6 +1,8 @@
 import { readdir, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { runGithubTool } from "../github/toolkit.js";
+import { EpisodeVectorStore } from "../memory/episode-store.js";
+import { formatSimilarEpisodes } from "../memory/episodes.js";
 import { ChunkVectorStore } from "../rag/store.js";
 import {
   ContextBuilder,
@@ -17,9 +19,11 @@ export type GatherContextOptions = {
   issueNumber?: number;
   issueText?: string;
   ragTopK?: number;
+  episodeTopK?: number;
   repoRoot?: string;
   instructions?: string;
   ragStore?: ChunkVectorStore;
+  episodeStore?: EpisodeVectorStore;
 };
 
 async function walkRepo(
@@ -91,11 +95,32 @@ async function fetchRagResults(
   }
 }
 
+async function fetchSimilarEpisodes(
+  query: string,
+  topK: number,
+  store?: EpisodeVectorStore,
+): Promise<string> {
+  if (!process.env.DATABASE_URL) {
+    return "(episodic memory unavailable: DATABASE_URL is not set)";
+  }
+
+  const episodeStore = store ?? EpisodeVectorStore.connect();
+  const shouldClose = !store;
+
+  try {
+    const episodes = await episodeStore.searchSimilar(query, topK);
+    return formatSimilarEpisodes(episodes);
+  } finally {
+    if (shouldClose) await episodeStore.close();
+  }
+}
+
 export async function gatherStaticContext(
   options: GatherContextOptions,
 ): Promise<StaticContext> {
   const repoRoot = options.repoRoot ?? process.cwd();
   const ragTopK = options.ragTopK ?? 5;
+  const episodeTopK = options.episodeTopK ?? 3;
 
   let issue: IssueContext;
   if (options.issueText) {
@@ -116,12 +141,18 @@ export async function gatherStaticContext(
     ragTopK,
     options.ragStore,
   );
+  const episodicMemory = await fetchSimilarEpisodes(
+    ragQuery,
+    episodeTopK,
+    options.episodeStore,
+  );
 
   return {
     systemInstructions: options.instructions ?? DEFAULT_CONTEXT_INSTRUCTIONS,
     githubIssue: formatGithubIssue(issue),
     repositoryStructure: repoTree,
     ragResults,
+    episodicMemory,
   };
 }
 

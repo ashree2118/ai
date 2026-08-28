@@ -13,6 +13,7 @@ export type ContextSections = {
   githubIssue: string;
   repositoryStructure: string;
   ragResults: string;
+  episodicMemory: string;
   toolHistory: string;
 };
 
@@ -21,6 +22,7 @@ export type StaticContext = {
   githubIssue: string;
   repositoryStructure: string;
   ragResults: string;
+  episodicMemory: string;
 };
 
 const MAX_TOOL_OUTPUT_CHARS = 240;
@@ -58,6 +60,8 @@ export function formatRagResults(chunks: SimilarChunk[]): string {
     })
     .join("\n\n");
 }
+
+export { formatSimilarEpisodes } from "../memory/episodes.js";
 
 function summarizeToolResult(content: string | unknown): string {
   const text =
@@ -116,6 +120,9 @@ export function buildContextPrompt(sections: ContextSections): string {
     "",
     "## Retrieved Code Context",
     sections.ragResults.trim(),
+    "",
+    "## Similar Past Episodes",
+    sections.episodicMemory.trim(),
     "",
     "## Tool History",
     sections.toolHistory.trim(),

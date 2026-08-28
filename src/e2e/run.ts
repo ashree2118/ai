@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { exitCodeForAgentResult, printAgentResult } from "../agent-output.js";
 import { buildUserTask, createContextBuilder } from "../context/gather.js";
+import { recordEpisodeFromRun } from "../memory/record-episode.js";
 import { indexEvalCorpus } from "../eval/runner.js";
 import { ReactAgent } from "../react-agent.js";
 import { ChunkVectorStore } from "../rag/store.js";
@@ -51,6 +52,16 @@ export async function runE2EIssue(options: RunE2EOptions = {}) {
 
   console.error(`[e2e] running issue ${issue.id}: ${issue.title}`);
   const result = await agent.run(buildUserTask(issue.task));
+
+  const episodeId = await recordEpisodeFromRun({
+    task: issue.task,
+    issueText: `# ${issue.title}\n\n${issue.issueBody}`,
+    result,
+    scratchpad: agent.scratchpadState,
+  });
+  if (episodeId) {
+    console.error(`[e2e] recorded episode ${episodeId}`);
+  }
 
   const record = trace.toRecord(result);
   const traceReport = trace.formatReport();

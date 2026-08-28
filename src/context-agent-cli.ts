@@ -2,6 +2,7 @@
 
 import { exitCodeForAgentResult, printAgentResult } from "./agent-output.js";
 import { buildUserTask, createContextBuilder } from "./context/gather.js";
+import { recordEpisodeFromRun } from "./memory/record-episode.js";
 import { ReactAgent } from "./react-agent.js";
 
 type CliOptions = {
@@ -96,8 +97,19 @@ async function main() {
     log: (message) => console.error(message),
   });
 
-  console.error("[context] injected system sections: instructions, issue, repo, rag, tool-history");
+  console.error("[context] injected system sections: instructions, issue, repo, rag, episodes, tool-history");
   const result = await agent.run(buildUserTask(options.task));
+
+  const episodeId = await recordEpisodeFromRun({
+    task: options.task,
+    issueText: options.issueText,
+    result,
+    scratchpad: agent.scratchpadState,
+  });
+  if (episodeId) {
+    console.error(`[context] recorded episode ${episodeId}`);
+  }
+
   printAgentResult(result);
   process.exit(exitCodeForAgentResult(result));
 }
