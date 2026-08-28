@@ -16,6 +16,7 @@ import {
   type TokenUsageTotals,
 } from "./guardrails.js";
 import { executeTools } from "./tool-loop.js";
+import { ScratchpadMemory } from "./memory/scratchpad.js";
 import { TOOLS } from "./tool-registry.js";
 import type { AgentTrace } from "./trace/agent-trace.js";
 
@@ -54,6 +55,8 @@ export type ReactAgentOptions = {
   client?: Anthropic;
   log?: (message: string) => void;
   trace?: AgentTrace;
+  scratchpad?: ScratchpadMemory;
+  enableScratchpad?: boolean;
 };
 
 export type ReactAgentResult = {
@@ -91,6 +94,7 @@ export class ReactAgent {
   private readonly tools: Tool[];
   private readonly log: (message: string) => void;
   private readonly trace?: AgentTrace;
+  private readonly scratchpad?: ScratchpadMemory;
   private messages: MessageParam[] = [];
 
   constructor(options: ReactAgentOptions = {}) {
@@ -104,6 +108,13 @@ export class ReactAgent {
     this.tools = options.tools ?? TOOLS;
     this.log = options.log ?? ((message) => console.error(message));
     this.trace = options.trace;
+    this.scratchpad =
+      options.scratchpad ??
+      (options.enableScratchpad ? new ScratchpadMemory() : undefined);
+  }
+
+  get scratchpadState() {
+    return this.scratchpad?.snapshot;
   }
 
   get history(): readonly MessageParam[] {
@@ -115,7 +126,9 @@ export class ReactAgent {
   }
 
   private resolveSystem(): string {
-    return this.dynamicSystem?.(this.messages) ?? this.system;
+    const base = this.dynamicSystem?.(this.messages) ?? this.system;
+    if (!this.scratchpad) return base;
+    return `${base}\n\n${this.scratchpad.format()}`;
   }
 
   private buildPartialResult(input: {
@@ -144,6 +157,7 @@ export class ReactAgent {
   }
 
   async run(task: string): Promise<ReactAgentResult> {
+    this.scratchpad?.setGoal(task);
     this.messages.push({ role: "user", content: task });
 
     let lastUsage!: Usage;
@@ -232,6 +246,7 @@ export class ReactAgent {
         iteration,
         trace: this.trace,
       });
+      this.scratchpad?.recordToolBatch(toolUses, toolResults);
       this.messages.push({ role: "user", content: toolResults });
       this.log(`[react] tool_result sent for ${toolResults.length} tool call(s)`);
     }

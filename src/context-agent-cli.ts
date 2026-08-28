@@ -92,6 +92,7 @@ async function main() {
     dynamicSystem: (messages) => contextBuilder.buildSystem(messages),
     maxIterations: options.maxIterations,
     maxTokenBudget: options.maxTokenBudget,
+    enableScratchpad: true,
     log: (message) => console.error(message),
   });
 

@@ -45,6 +45,7 @@ export async function runE2EIssue(options: RunE2EOptions = {}) {
     maxIterations: options.maxIterations ?? 8,
     maxTokenBudget: options.maxTokenBudget ?? 20_000,
     trace,
+    enableScratchpad: true,
     log: (message) => console.error(message),
   });
 
