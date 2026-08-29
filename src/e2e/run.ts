@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { exitCodeForAgentResult, printAgentResult } from "../agent-output.js";
 import { buildUserTask, createContextBuilder } from "../context/gather.js";
+import { ensureGithubMcp } from "../mcp/connect.js";
 import { recordEpisodeFromRun } from "../memory/record-episode.js";
 import { indexEvalCorpus } from "../eval/runner.js";
 import { ReactAgent } from "../react-agent.js";
@@ -17,12 +18,15 @@ export type RunE2EOptions = {
   maxTokenBudget?: number;
   outputDir?: string;
   skipIndex?: boolean;
+  githubMcp?: boolean;
 };
 
 export async function runE2EIssue(options: RunE2EOptions = {}) {
   const issue = options.issue ?? E2E_REAL_ISSUE;
   const outputDir = resolve(options.outputDir ?? "traces");
   const trace = new AgentTrace(issue.id);
+
+  await ensureGithubMcp(options.githubMcp);
 
   if (process.env.DATABASE_URL && !options.skipIndex) {
     const store = ChunkVectorStore.connect();

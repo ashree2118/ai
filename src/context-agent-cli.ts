@@ -2,6 +2,7 @@
 
 import { exitCodeForAgentResult, printAgentResult } from "./agent-output.js";
 import { buildUserTask, createContextBuilder } from "./context/gather.js";
+import { ensureGithubMcp } from "./mcp/connect.js";
 import { recordEpisodeFromRun } from "./memory/record-episode.js";
 import { ReactAgent } from "./react-agent.js";
 
@@ -12,6 +13,7 @@ type CliOptions = {
   ragTopK: number;
   maxIterations?: number;
   maxTokenBudget?: number;
+  githubMcp?: boolean;
 };
 
 function parseArgs(argv: string[]): CliOptions {
@@ -21,9 +23,14 @@ function parseArgs(argv: string[]): CliOptions {
   let ragTopK = 5;
   let maxIterations: number | undefined;
   let maxTokenBudget: number | undefined;
+  let githubMcp = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
+    if (arg === "--github-mcp") {
+      githubMcp = true;
+      continue;
+    }
     if (arg === "--issue" && argv[i + 1]) {
       issueNumber = Number(argv[++i]);
       continue;
@@ -51,12 +58,13 @@ function parseArgs(argv: string[]): CliOptions {
   if (!task) {
     console.error(`Usage:
   context-agent <task> [--issue <number>] [--issue-text "..."] [--rag-top <k>]
-                     [--max-iterations N] [--max-token-budget N]
+                     [--max-iterations N] [--max-token-budget N] [--github-mcp]
 
 Environment:
   ANTHROPIC_API_KEY        Required
   DATABASE_URL             Optional, for RAG retrieval
   GITHUB_TOKEN             Optional, when using --issue
+  USE_GITHUB_MCP           Optional, route github tools through MCP
   REACT_MAX_ITERATIONS     Optional default iteration limit
   REACT_MAX_TOKEN_BUDGET   Optional default token budget`);
     process.exit(1);
@@ -72,7 +80,7 @@ Environment:
     throw new Error("--rag-top must be a positive integer");
   }
 
-  return { task, issueNumber, issueText, ragTopK, maxIterations, maxTokenBudget };
+  return { task, issueNumber, issueText, ragTopK, maxIterations, maxTokenBudget, githubMcp };
 }
 
 async function main() {
@@ -82,6 +90,8 @@ async function main() {
   }
 
   const options = parseArgs(process.argv.slice(2));
+  await ensureGithubMcp(options.githubMcp);
+
   const contextBuilder = await createContextBuilder({
     task: options.task,
     issueNumber: options.issueNumber,
