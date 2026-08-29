@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ToolUseBlock } from "@anthropic-ai/sdk/resources/messages/messages";
+import { HitlGate } from "./hitl/gate.js";
 import { executeTools, groupToolUsesByDependency } from "./tool-loop.js";
+import { setVerificationRunner, resetVerificationRunner } from "./tool-registry.js";
 
 function toolUse(
   id: string,
@@ -72,4 +74,43 @@ test("executeTools runs independent reads concurrently", async () => {
   const results = await executeTools(toolUses);
   assert.equal(results.length, 2);
   assert.equal(results.every((result) => !result.is_error), true);
+});
+
+test("executeTools blocks github_create_pr when HITL rejects PR checkpoint", async () => {
+  const previousSkip = process.env.SKIP_VERIFICATION;
+  process.env.SKIP_VERIFICATION = "1";
+  setVerificationRunner(async () => ({
+    passed: true,
+    modifiedFiles: [],
+    diff: "",
+    checks: [],
+  }));
+
+  const hitl = new HitlGate(async (request) =>
+    request.kind === "pr_creation" ? "rejected" : "approved",
+  );
+  await hitl.ensurePlanApproved({
+    assistantText: "Open PR",
+    plan: ["Create PR"],
+    pendingTools: ["github_create_pr"],
+  });
+
+  const toolUses = [
+    toolUse("toolu_pr", "github_create_pr", {
+      title: "Fix",
+      head: "feature",
+      base: "main",
+    }),
+  ];
+
+  try {
+    const results = await executeTools(toolUses, { hitl });
+    assert.equal(results.length, 1);
+    assert.equal(results[0]?.is_error, true);
+    assert.match(String(results[0]?.content), /rejected/i);
+  } finally {
+    resetVerificationRunner();
+    if (previousSkip === undefined) delete process.env.SKIP_VERIFICATION;
+    else process.env.SKIP_VERIFICATION = previousSkip;
+  }
 });

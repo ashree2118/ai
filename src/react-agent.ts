@@ -15,8 +15,11 @@ import {
   partialReasonForTokenBudget,
   type TokenUsageTotals,
 } from "./guardrails.js";
-import { executeTools } from "./tool-loop.js";
+import { executeTools, toToolResult } from "./tool-loop.js";
 import { ContextManager } from "./context/manager.js";
+import type { HitlGate } from "./hitl/gate.js";
+import { HitlRejectedError } from "./hitl/gate.js";
+import { createHitlGate } from "./hitl/connect.js";
 import { ScratchpadMemory } from "./memory/scratchpad.js";
 import { TOOLS } from "./tool-registry.js";
 import type { AgentTrace } from "./trace/agent-trace.js";
@@ -60,6 +63,8 @@ export type ReactAgentOptions = {
   enableScratchpad?: boolean;
   contextManager?: ContextManager;
   enableContextManagement?: boolean;
+  hitl?: HitlGate;
+  enableHitl?: boolean;
 };
 
 export type ReactAgentResult = {
@@ -99,6 +104,7 @@ export class ReactAgent {
   private readonly trace?: AgentTrace;
   private readonly scratchpad?: ScratchpadMemory;
   private readonly contextManager?: ContextManager;
+  private readonly hitl?: HitlGate;
   private messages: MessageParam[] = [];
 
   constructor(options: ReactAgentOptions = {}) {
@@ -118,6 +124,7 @@ export class ReactAgent {
     this.contextManager =
       options.contextManager ??
       (options.enableContextManagement ? new ContextManager() : undefined);
+    this.hitl = options.hitl ?? createHitlGate(options.enableHitl);
   }
 
   get contextSummary(): string | undefined {
@@ -272,9 +279,35 @@ export class ReactAgent {
         `[react] tools requested (${toolUses.length}): ${toolUses.map((tool) => tool.name).join(", ")}`,
       );
 
+      if (this.hitl && toolUses.length > 0) {
+        try {
+          await this.hitl.ensurePlanApproved({
+            assistantText: lastAssistantText,
+            plan: this.scratchpad?.snapshot.plan ?? [],
+            pendingTools: toolUses.map((tool) => tool.name),
+          });
+          this.log("[hitl] plan approved");
+        } catch (error) {
+          if (error instanceof HitlRejectedError && error.kind === "plan") {
+            this.log("[hitl] plan rejected");
+            const toolResults = toolUses.map((toolUse) =>
+              toToolResult(
+                toolUse,
+                "Plan rejected by human reviewer. Revise the approach before retrying tools.",
+                true,
+              ),
+            );
+            this.messages.push({ role: "user", content: toolResults });
+            continue;
+          }
+          throw error;
+        }
+      }
+
       const toolResults = await executeTools(toolUses, {
         iteration,
         trace: this.trace,
+        hitl: this.hitl,
       });
       this.scratchpad?.recordToolBatch(toolUses, toolResults);
       this.messages.push({ role: "user", content: toolResults });

@@ -9,16 +9,22 @@ function parseArgs(argv: string[]): {
   maxIterations?: number;
   maxTokenBudget?: number;
   githubMcp?: boolean;
+  hitl?: boolean;
 } {
   const parts: string[] = [];
   let maxIterations: number | undefined;
   let maxTokenBudget: number | undefined;
   let githubMcp = false;
+  let hitl = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     if (arg === "--github-mcp") {
       githubMcp = true;
+      continue;
+    }
+    if (arg === "--hitl") {
+      hitl = true;
       continue;
     }
     if (arg === "--max-iterations" && argv[i + 1]) {
@@ -34,11 +40,11 @@ function parseArgs(argv: string[]): {
 
   const task = parts.join(" ").trim();
   if (!task) {
-    console.error("Usage: react-agent <task> [--max-iterations N] [--max-token-budget N] [--github-mcp]");
+    console.error("Usage: react-agent <task> [--max-iterations N] [--max-token-budget N] [--github-mcp] [--hitl]");
     process.exit(1);
   }
 
-  return { task, maxIterations, maxTokenBudget, githubMcp };
+  return { task, maxIterations, maxTokenBudget, githubMcp, hitl };
 }
 
 async function main() {
@@ -47,11 +53,15 @@ async function main() {
     process.exit(1);
   }
 
-  const { task, maxIterations, maxTokenBudget, githubMcp } = parseArgs(
+  const { task, maxIterations, maxTokenBudget, githubMcp, hitl } = parseArgs(
     process.argv.slice(2),
   );
   await ensureGithubMcp(githubMcp);
-  const result = await runReactAgent(task, { maxIterations, maxTokenBudget });
+  const result = await runReactAgent(task, {
+    maxIterations,
+    maxTokenBudget,
+    enableHitl: hitl,
+  });
   printAgentResult(result);
   process.exit(exitCodeForAgentResult(result));
 }

@@ -14,6 +14,7 @@ type CliOptions = {
   maxIterations?: number;
   maxTokenBudget?: number;
   githubMcp?: boolean;
+  hitl?: boolean;
 };
 
 function parseArgs(argv: string[]): CliOptions {
@@ -24,11 +25,16 @@ function parseArgs(argv: string[]): CliOptions {
   let maxIterations: number | undefined;
   let maxTokenBudget: number | undefined;
   let githubMcp = false;
+  let hitl = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     if (arg === "--github-mcp") {
       githubMcp = true;
+      continue;
+    }
+    if (arg === "--hitl") {
+      hitl = true;
       continue;
     }
     if (arg === "--issue" && argv[i + 1]) {
@@ -58,13 +64,15 @@ function parseArgs(argv: string[]): CliOptions {
   if (!task) {
     console.error(`Usage:
   context-agent <task> [--issue <number>] [--issue-text "..."] [--rag-top <k>]
-                     [--max-iterations N] [--max-token-budget N] [--github-mcp]
+                     [--max-iterations N] [--max-token-budget N] [--github-mcp] [--hitl]
 
 Environment:
   ANTHROPIC_API_KEY        Required
   DATABASE_URL             Optional, for RAG retrieval
   GITHUB_TOKEN             Optional, when using --issue
   USE_GITHUB_MCP           Optional, route github tools through MCP
+  ENABLE_HITL              Optional, require approval for plan and PR creation
+  HITL_AUTO_APPROVE        Optional, auto-approve checkpoints in CI
   REACT_MAX_ITERATIONS     Optional default iteration limit
   REACT_MAX_TOKEN_BUDGET   Optional default token budget`);
     process.exit(1);
@@ -80,7 +88,7 @@ Environment:
     throw new Error("--rag-top must be a positive integer");
   }
 
-  return { task, issueNumber, issueText, ragTopK, maxIterations, maxTokenBudget, githubMcp };
+  return { task, issueNumber, issueText, ragTopK, maxIterations, maxTokenBudget, githubMcp, hitl };
 }
 
 async function main() {
@@ -105,6 +113,7 @@ async function main() {
     maxTokenBudget: options.maxTokenBudget,
     enableScratchpad: true,
     enableContextManagement: true,
+    enableHitl: options.hitl,
     log: (message) => console.error(message),
   });
 

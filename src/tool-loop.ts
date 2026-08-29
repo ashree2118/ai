@@ -2,13 +2,28 @@ import type {
   ToolResultBlockParam,
   ToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages/messages";
+import type { HitlGate } from "./hitl/gate.js";
 import type { AgentTrace } from "./trace/agent-trace.js";
 import { runTool } from "./tool-registry.js";
 
 export type ExecuteToolsOptions = {
   iteration?: number;
   trace?: AgentTrace;
+  hitl?: HitlGate;
 };
+
+export function toToolResult(
+  toolUse: ToolUseBlock,
+  output: string,
+  isError = false,
+): ToolResultBlockParam {
+  return {
+    type: "tool_result",
+    tool_use_id: toolUse.id,
+    content: output,
+    ...(isError ? { is_error: true } : {}),
+  };
+}
 
 function dependencyIds(
   toolUse: ToolUseBlock,
@@ -64,17 +79,14 @@ export function groupToolUsesByDependency(
   return groups;
 }
 
-function toToolResult(
+async function runToolWithHitl(
   toolUse: ToolUseBlock,
-  output: string,
-  isError = false,
-): ToolResultBlockParam {
-  return {
-    type: "tool_result",
-    tool_use_id: toolUse.id,
-    content: output,
-    ...(isError ? { is_error: true } : {}),
-  };
+  hitl?: HitlGate,
+): Promise<string> {
+  if (hitl) {
+    await hitl.ensurePrApproved({ toolUse });
+  }
+  return runTool(toolUse.name, toolUse.input);
 }
 
 async function executeToolGroup(
@@ -93,7 +105,9 @@ async function executeToolGroup(
   }
 
   const settled = await Promise.allSettled(
-    toolUses.map(async (toolUse) => runTool(toolUse.name, toolUse.input)),
+    toolUses.map(async (toolUse) =>
+      runToolWithHitl(toolUse, options.hitl),
+    ),
   );
 
   return settled.map((result, index) => {
