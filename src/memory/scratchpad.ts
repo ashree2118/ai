@@ -11,6 +11,7 @@ export type ScratchpadState = {
   changedFiles: string[];
   discoveries: string[];
   testResults: string[];
+  reflectionNotes: string[];
   nextAction: string;
 };
 
@@ -45,6 +46,7 @@ export class ScratchpadMemory {
     changedFiles: [],
     discoveries: [],
     testResults: [],
+    reflectionNotes: [],
     nextAction: "Inspect relevant files and gather evidence.",
   };
 
@@ -57,6 +59,7 @@ export class ScratchpadMemory {
       changedFiles: [...this.state.changedFiles],
       discoveries: [...this.state.discoveries],
       testResults: [...this.state.testResults],
+      reflectionNotes: [...this.state.reflectionNotes],
       nextAction: this.state.nextAction,
     };
   }
@@ -92,6 +95,14 @@ export class ScratchpadMemory {
     }
 
     this.refreshDerivedFields();
+  }
+
+  recordReflection(notes: string[]): void {
+    this.state.reflectionNotes = [...notes];
+    if (notes.length > 0) {
+      this.state.nextAction =
+        "Analyze recent failures, update your hypothesis, and try a different approach.";
+    }
   }
 
   private recordTool(
@@ -219,6 +230,11 @@ export class ScratchpadMemory {
       "### Test Results",
       ...(this.state.testResults.length
         ? this.state.testResults.map((item) => `- ${item}`)
+        : ["- (none)"]),
+      "",
+      "### Reflection",
+      ...(this.state.reflectionNotes.length
+        ? this.state.reflectionNotes.map((item) => `- ${item}`)
         : ["- (none)"]),
       "",
       "### Next Action",

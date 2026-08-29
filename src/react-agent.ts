@@ -20,6 +20,11 @@ import { ContextManager } from "./context/manager.js";
 import type { HitlGate } from "./hitl/gate.js";
 import { HitlRejectedError } from "./hitl/gate.js";
 import { createHitlGate } from "./hitl/connect.js";
+import {
+  mergeToolResults,
+  partitionToolUses,
+  RetryPolicy,
+} from "./reflection/retry.js";
 import { ScratchpadMemory } from "./memory/scratchpad.js";
 import { TOOLS } from "./tool-registry.js";
 import type { AgentTrace } from "./trace/agent-trace.js";
@@ -65,6 +70,9 @@ export type ReactAgentOptions = {
   enableContextManagement?: boolean;
   hitl?: HitlGate;
   enableHitl?: boolean;
+  retryPolicy?: RetryPolicy;
+  enableReflection?: boolean;
+  maxRetries?: number;
 };
 
 export type ReactAgentResult = {
@@ -105,6 +113,7 @@ export class ReactAgent {
   private readonly scratchpad?: ScratchpadMemory;
   private readonly contextManager?: ContextManager;
   private readonly hitl?: HitlGate;
+  private readonly retryPolicy?: RetryPolicy;
   private messages: MessageParam[] = [];
 
   constructor(options: ReactAgentOptions = {}) {
@@ -125,6 +134,12 @@ export class ReactAgent {
       options.contextManager ??
       (options.enableContextManagement ? new ContextManager() : undefined);
     this.hitl = options.hitl ?? createHitlGate(options.enableHitl);
+    const reflectionEnabled =
+      options.enableReflection ??
+      (options.enableScratchpad ? true : Boolean(options.scratchpad));
+    this.retryPolicy =
+      options.retryPolicy ??
+      (reflectionEnabled ? new RetryPolicy(options.maxRetries) : undefined);
   }
 
   get contextSummary(): string | undefined {
@@ -151,6 +166,9 @@ export class ReactAgent {
     }
     if (this.scratchpad) {
       parts.push(this.scratchpad.format());
+    }
+    if (this.retryPolicy && this.retryPolicy.recent.length > 0) {
+      parts.push(this.retryPolicy.formatReflectionSection());
     }
     return parts.join("\n\n");
   }
@@ -304,12 +322,36 @@ export class ReactAgent {
         }
       }
 
-      const toolResults = await executeTools(toolUses, {
-        iteration,
-        trace: this.trace,
-        hitl: this.hitl,
-      });
+      const { allowed, blocked } = partitionToolUses(toolUses, this.retryPolicy);
+      if (blocked.length > 0) {
+        this.log(`[reflection] blocked ${blocked.length} blind retry tool call(s)`);
+      }
+
+      const executed =
+        allowed.length > 0
+          ? await executeTools(allowed, {
+              iteration,
+              trace: this.trace,
+              hitl: this.hitl,
+            })
+          : [];
+
+      const toolResults = mergeToolResults(toolUses, executed, blocked);
       this.scratchpad?.recordToolBatch(toolUses, toolResults);
+      this.retryPolicy?.recordBatch(toolUses, toolResults);
+
+      if (this.retryPolicy && this.retryPolicy.recent.length > 0) {
+        this.scratchpad?.recordReflection(
+          this.retryPolicy.recent.map(
+            (failure) =>
+              `${failure.tool} attempt ${failure.attempts}/${this.retryPolicy!.maxAttempts}: ${failure.error}`,
+          ),
+        );
+        this.log(
+          `[reflection] recorded ${this.retryPolicy.recent.length} failure(s) for analysis`,
+        );
+      }
+
       this.messages.push({ role: "user", content: toolResults });
       this.log(`[react] tool_result sent for ${toolResults.length} tool call(s)`);
     }

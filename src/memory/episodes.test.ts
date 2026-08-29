@@ -42,6 +42,7 @@ test("buildEpisodeFromRun maps scratchpad and result fields", () => {
       changedFiles: ["src/validation.ts"],
       discoveries: ["Read src/validation.ts: export function validate"],
       testResults: ["43 passing"],
+      reflectionNotes: [],
       nextAction: "Provide final answer",
     },
   });
@@ -69,6 +70,7 @@ test("buildEpisodeFromRun records partial failures", () => {
       changedFiles: [],
       discoveries: ["read_file failed: ENOENT"],
       testResults: [],
+      reflectionNotes: [],
       nextAction: "Inspect files",
     },
   });
