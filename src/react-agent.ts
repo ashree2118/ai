@@ -16,6 +16,7 @@ import {
   type TokenUsageTotals,
 } from "./guardrails.js";
 import { executeTools } from "./tool-loop.js";
+import { ContextManager } from "./context/manager.js";
 import { ScratchpadMemory } from "./memory/scratchpad.js";
 import { TOOLS } from "./tool-registry.js";
 import type { AgentTrace } from "./trace/agent-trace.js";
@@ -57,6 +58,8 @@ export type ReactAgentOptions = {
   trace?: AgentTrace;
   scratchpad?: ScratchpadMemory;
   enableScratchpad?: boolean;
+  contextManager?: ContextManager;
+  enableContextManagement?: boolean;
 };
 
 export type ReactAgentResult = {
@@ -95,6 +98,7 @@ export class ReactAgent {
   private readonly log: (message: string) => void;
   private readonly trace?: AgentTrace;
   private readonly scratchpad?: ScratchpadMemory;
+  private readonly contextManager?: ContextManager;
   private messages: MessageParam[] = [];
 
   constructor(options: ReactAgentOptions = {}) {
@@ -111,6 +115,13 @@ export class ReactAgent {
     this.scratchpad =
       options.scratchpad ??
       (options.enableScratchpad ? new ScratchpadMemory() : undefined);
+    this.contextManager =
+      options.contextManager ??
+      (options.enableContextManagement ? new ContextManager() : undefined);
+  }
+
+  get contextSummary(): string | undefined {
+    return this.contextManager?.summary;
   }
 
   get scratchpadState() {
@@ -123,12 +134,29 @@ export class ReactAgent {
 
   reset(): void {
     this.messages = [];
+    this.contextManager?.reset();
   }
 
-  private resolveSystem(): string {
-    const base = this.dynamicSystem?.(this.messages) ?? this.system;
-    if (!this.scratchpad) return base;
-    return `${base}\n\n${this.scratchpad.format()}`;
+  private resolveSystem(messages: readonly MessageParam[]): string {
+    const parts = [this.dynamicSystem?.(messages) ?? this.system];
+    if (this.contextManager) {
+      parts.push(this.contextManager.formatSummarySection());
+    }
+    if (this.scratchpad) {
+      parts.push(this.scratchpad.format());
+    }
+    return parts.join("\n\n");
+  }
+
+  private prepareApiContext(): MessageParam[] {
+    if (!this.contextManager) return this.messages;
+    const prepared = this.contextManager.prepare(this.messages);
+    if (prepared.compressed) {
+      this.log(
+        `[context] compressed history to ${prepared.messages.length} message(s); summary ${this.contextManager.summary.length} chars`,
+      );
+    }
+    return prepared.messages;
   }
 
   private buildPartialResult(input: {
@@ -182,12 +210,14 @@ export class ReactAgent {
       this.trace?.startIteration(iteration);
       this.log(`[react] iteration ${iteration}/${this.maxIterations}`);
 
+      const apiMessages = this.prepareApiContext();
+
       const response = await this.client.messages.create({
         model: this.model,
         max_tokens: this.maxTokens,
-        system: this.resolveSystem(),
+        system: this.resolveSystem(apiMessages),
         tools: this.tools,
-        messages: this.messages,
+        messages: apiMessages,
       });
 
       lastUsage = response.usage;

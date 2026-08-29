@@ -6,8 +6,8 @@ import {
   buildContextPrompt,
   formatGithubIssue,
   formatRagResults,
-  formatToolHistory,
 } from "./builder.js";
+import { formatToolHistory } from "./tool-history.js";
 
 test("buildContextPrompt renders all required sections", () => {
   const prompt = buildContextPrompt({

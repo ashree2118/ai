@@ -47,6 +47,7 @@ export async function runE2EIssue(options: RunE2EOptions = {}) {
     maxTokenBudget: options.maxTokenBudget ?? 20_000,
     trace,
     enableScratchpad: true,
+    enableContextManagement: true,
     log: (message) => console.error(message),
   });
 

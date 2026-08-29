@@ -1,6 +1,7 @@
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages/messages";
 import type { SimilarChunk } from "../rag/store.js";
 import { DEFAULT_REACT_SYSTEM_PROMPT } from "../react-agent.js";
+import { formatToolHistory } from "./tool-history.js";
 
 export type IssueContext = {
   number?: number;
@@ -25,7 +26,6 @@ export type StaticContext = {
   episodicMemory: string;
 };
 
-const MAX_TOOL_OUTPUT_CHARS = 240;
 const MAX_RAG_SNIPPET_LINES = 12;
 
 function truncate(text: string, maxChars: number): string {
@@ -62,50 +62,6 @@ export function formatRagResults(chunks: SimilarChunk[]): string {
 }
 
 export { formatSimilarEpisodes } from "../memory/episodes.js";
-
-function summarizeToolResult(content: string | unknown): string {
-  const text =
-    typeof content === "string" ? content : JSON.stringify(content ?? "");
-  const oneLine = text.replace(/\s+/g, " ").trim();
-  return truncate(oneLine, MAX_TOOL_OUTPUT_CHARS);
-}
-
-export function formatToolHistory(messages: readonly MessageParam[]): string {
-  const lines: string[] = [];
-  let step = 0;
-
-  for (let index = 0; index < messages.length; index++) {
-    const message = messages[index]!;
-    if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
-
-    const toolUses = message.content.filter(
-      (block) => block.type === "tool_use",
-    );
-    if (toolUses.length === 0) continue;
-
-    const next = messages[index + 1];
-    const results =
-      next?.role === "user" && Array.isArray(next.content)
-        ? next.content.filter((block) => block.type === "tool_result")
-        : [];
-
-    for (const toolUse of toolUses) {
-      step += 1;
-      const result = results.find(
-        (block) => block.tool_use_id === toolUse.id,
-      );
-      const status = result?.is_error ? "error" : "ok";
-      const output = result
-        ? summarizeToolResult(result.content ?? "")
-        : "(no result)";
-      lines.push(
-        `${step}. ${toolUse.name}(${JSON.stringify(toolUse.input)}) -> ${status}: ${output}`,
-      );
-    }
-  }
-
-  return lines.length > 0 ? lines.join("\n") : "(none yet)";
-}
 
 export function buildContextPrompt(sections: ContextSections): string {
   return [
@@ -145,3 +101,5 @@ export class ContextBuilder {
 }
 
 export const DEFAULT_CONTEXT_INSTRUCTIONS = DEFAULT_REACT_SYSTEM_PROMPT;
+
+export { formatToolHistory } from "./tool-history.js";

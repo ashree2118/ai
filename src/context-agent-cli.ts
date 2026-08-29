@@ -94,10 +94,11 @@ async function main() {
     maxIterations: options.maxIterations,
     maxTokenBudget: options.maxTokenBudget,
     enableScratchpad: true,
+    enableContextManagement: true,
     log: (message) => console.error(message),
   });
 
-  console.error("[context] injected system sections: instructions, issue, repo, rag, episodes, tool-history");
+  console.error("[context] injected system sections: instructions, issue, repo, rag, episodes, summary, scratchpad, tool-history");
   const result = await agent.run(buildUserTask(options.task));
 
   const episodeId = await recordEpisodeFromRun({
