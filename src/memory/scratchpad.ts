@@ -2,6 +2,7 @@ import type {
   ToolResultBlockParam,
   ToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages/messages";
+import { isTestCommand } from "../sandbox/executor.js";
 
 export type ScratchpadState = {
   goal: string;
@@ -31,10 +32,6 @@ function pathFromInput(input: unknown): string | undefined {
 function summarize(text: string, max = 180): string {
   const oneLine = text.replace(/\s+/g, " ").trim();
   return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max)}…`;
-}
-
-function isTestCommand(command: string): boolean {
-  return /\b(npm test|node --test|vitest|jest|pytest)\b/i.test(command);
 }
 
 export class ScratchpadMemory {

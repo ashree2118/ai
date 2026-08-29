@@ -12,6 +12,11 @@ import {
   assertString,
   isRecord,
 } from "./validation.js";
+import {
+  isTestCommand,
+  runSandboxedTests,
+  shouldSandboxTests,
+} from "./sandbox/executor.js";
 
 export { ToolInputError } from "./validation.js";
 
@@ -99,7 +104,7 @@ export const TOOLS: Tool[] = [
   {
     name: "run_command",
     description:
-      "Run a shell command inside the workspace directory and return combined stdout/stderr.",
+      "Run a shell command inside the workspace directory and return combined stdout/stderr. Test commands (npm test, node --test, vitest, jest, pytest) run in an isolated Docker sandbox when SANDBOX_TESTS=1.",
     strict: true,
     input_schema: {
       type: "object",
@@ -252,6 +257,12 @@ async function readFileTool(input: ReadFileInput): Promise<string> {
 }
 
 async function runCommand(input: RunCommandInput): Promise<string> {
+  if (shouldSandboxTests() && isTestCommand(input.command)) {
+    return runSandboxedTests(input.command, {
+      timeoutMs: input.timeout_ms ?? 120_000,
+    });
+  }
+
   const shell = input.shell ?? defaultShell();
   const timeout = input.timeout_ms ?? 30_000;
   const command =

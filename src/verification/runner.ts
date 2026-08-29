@@ -1,6 +1,10 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
+  runSandboxedTests,
+  shouldSandboxTests,
+} from "../sandbox/executor.js";
+import {
   collectGitChanges,
   verifyGitDiff,
   verifyModifiedFiles,
@@ -187,35 +191,55 @@ export async function runVerification(
   }
 
   if (!options.skipTests) {
-    try {
-      const { stdout, stderr } = await runNpmScript("test", repoRoot);
-      checks.push({
-        name: "tests",
-        passed: true,
-        details: summarizeOutput(stdout, stderr),
-      });
-    } catch (error) {
-      const stdout =
-        typeof error === "object" &&
-        error !== null &&
-        "stdout" in error &&
-        error.stdout
-          ? String(error.stdout)
-          : "";
-      const stderr =
-        typeof error === "object" &&
-        error !== null &&
-        "stderr" in error &&
-        error.stderr
-          ? String(error.stderr)
-          : error instanceof Error
-            ? error.message
+    if (shouldSandboxTests()) {
+      try {
+        const output = await runSandboxedTests("npm test", {
+          workspaceRoot: repoRoot,
+        });
+        const passed =
+          output.includes("exit_code=0") && !output.includes("timed_out=true");
+        checks.push({
+          name: "tests",
+          passed,
+          details: output,
+        });
+      } catch (error) {
+        checks.push({
+          name: "tests",
+          passed: false,
+          details:
+            error instanceof Error ? error.message : String(error),
+        });
+      }
+    } else {
+      try {
+        const { stdout, stderr } = await runNpmScript("test", repoRoot);
+        checks.push({
+          name: "tests",
+          passed: true,
+          details: summarizeOutput(stdout, stderr),
+        });
+      } catch (error) {
+        const stdout =
+          typeof error === "object" &&
+          error !== null &&
+          "stdout" in error &&
+          error.stdout
+            ? String(error.stdout)
+            : "";
+        const stderr =
+          typeof error === "object" &&
+          error !== null &&
+          "stderr" in error &&
+          error.stderr
+            ? String(error.stderr)
             : String(error);
-      checks.push({
-        name: "tests",
-        passed: false,
-        details: summarizeOutput(stdout, stderr),
-      });
+        checks.push({
+          name: "tests",
+          passed: false,
+          details: summarizeOutput(stdout, stderr),
+        });
+      }
     }
   }
 
