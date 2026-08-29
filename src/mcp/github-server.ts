@@ -6,7 +6,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { runGithubTool } from "../github/toolkit.js";
+import { runTool } from "../tool-registry.js";
 import {
   buildMcpToolDefinitions,
   toAgentGithubToolName,
@@ -25,7 +25,7 @@ async function main() {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       const agentToolName = toAgentGithubToolName(request.params.name);
-      const output = await runGithubTool(
+      const output = await runTool(
         agentToolName,
         request.params.arguments ?? {},
       );
