@@ -1,5 +1,11 @@
 #!/usr/bin/env node
 
+import { writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import {
+  formatAgentEvalReport,
+  runAgentEval,
+} from "./eval/agent-runner.js";
 import {
   formatEvalReport,
   runDatasetEvalPipeline,
@@ -13,34 +19,50 @@ import {
 
 function usage(): never {
   console.error(`Usage:
-  eval-cli retrieval [--split train|test|all]
+  eval-cli retrieval [--dataset] [--split train|test|all]
   eval-cli dataset [--id <eval-id>]
+  eval-cli agent [--split train|test|all] [--id <eval-id>] [--artifacts-dir <dir>] [--skip-run] [--skip-judge] [--json-out <path>]
 
 Commands:
   retrieval   Run retrieval Precision@K evaluation (default: legacy 10-issue corpus)
   dataset     Print the 20-issue agent eval dataset summary or one issue
+  agent       Score agent fixes with file metrics, test pass rate, and LLM PR judge
 
 Examples:
   eval-cli dataset
   eval-cli dataset --id eval-16
-  eval-cli retrieval --dataset --split test`);
+  eval-cli retrieval --dataset --split test
+  eval-cli agent --split test --artifacts-dir traces/artifacts
+  eval-cli agent --id eval-01 --skip-run`);
   process.exit(1);
 }
 
 function parseArgs(argv: string[]): {
-  command: "retrieval" | "dataset";
+  command: "retrieval" | "dataset" | "agent";
   split: "train" | "test" | "all";
   useDataset: boolean;
   id?: string;
+  artifactsDir?: string;
+  skipRun: boolean;
+  skipJudge: boolean;
+  jsonOut?: string;
 } {
   const parts = [...argv];
-  let command: "retrieval" | "dataset" = "retrieval";
+  let command: "retrieval" | "dataset" | "agent" = "retrieval";
   let split: "train" | "test" | "all" = "all";
   let useDataset = false;
   let id: string | undefined;
+  let artifactsDir: string | undefined;
+  let skipRun = false;
+  let skipJudge = false;
+  let jsonOut: string | undefined;
 
-  if (parts[0] === "retrieval" || parts[0] === "dataset") {
-    command = parts.shift() as "retrieval" | "dataset";
+  if (
+    parts[0] === "retrieval" ||
+    parts[0] === "dataset" ||
+    parts[0] === "agent"
+  ) {
+    command = parts.shift() as "retrieval" | "dataset" | "agent";
   }
 
   for (let i = 0; i < parts.length; i++) {
@@ -57,6 +79,22 @@ function parseArgs(argv: string[]): {
       id = parts[++i];
       continue;
     }
+    if (arg === "--artifacts-dir" && parts[i + 1]) {
+      artifactsDir = parts[++i];
+      continue;
+    }
+    if (arg === "--json-out" && parts[i + 1]) {
+      jsonOut = parts[++i];
+      continue;
+    }
+    if (arg === "--skip-run") {
+      skipRun = true;
+      continue;
+    }
+    if (arg === "--skip-judge") {
+      skipJudge = true;
+      continue;
+    }
     usage();
   }
 
@@ -64,7 +102,16 @@ function parseArgs(argv: string[]): {
     throw new Error("--split must be train, test, or all");
   }
 
-  return { command, split, useDataset, id };
+  return {
+    command,
+    split,
+    useDataset,
+    id,
+    artifactsDir,
+    skipRun,
+    skipJudge,
+    jsonOut,
+  };
 }
 
 function printDatasetSummary(): void {
@@ -116,6 +163,34 @@ async function main() {
       return;
     }
     printDatasetSummary();
+    return;
+  }
+
+  if (options.command === "agent") {
+    if (!options.skipJudge && !process.env.ANTHROPIC_API_KEY) {
+      console.error("Error: ANTHROPIC_API_KEY is not set");
+      process.exit(1);
+    }
+
+    const summary = await runAgentEval({
+      split: options.split,
+      ids: options.id ? [options.id] : undefined,
+      artifactsDir: options.artifactsDir,
+      skipRun: options.skipRun,
+      skipJudge: options.skipJudge,
+    });
+
+    console.log(formatAgentEvalReport(summary));
+
+    if (options.jsonOut) {
+      const outputPath = resolve(options.jsonOut);
+      await writeFile(outputPath, JSON.stringify(summary, null, 2), "utf8");
+      console.error(`[agent-eval] wrote ${outputPath}`);
+    }
+
+    if (summary.failures.length > 0) {
+      process.exit(1);
+    }
     return;
   }
 
