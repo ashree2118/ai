@@ -98,7 +98,7 @@ test("runAgentEval aggregates per-issue results from injected artifacts", async 
     },
   };
 
-  const summary = await runAgentEval({
+  const run = await runAgentEval({
     ids: ["eval-01", "eval-02"],
     runIssue: async (issue) =>
       mockArtifacts({
@@ -120,9 +120,9 @@ test("runAgentEval aggregates per-issue results from injected artifacts", async 
     judgeClient,
   });
 
-  assert.equal(summary.issueCount, 2);
-  assert.equal(summary.testPassRate, 0.5);
-  assert.equal(summary.prAcceptanceRate, 0.5);
-  assert.equal(summary.failures.length, 1);
-  assert.match(formatAgentEvalReport(summary), /mean file precision/);
+  assert.equal(run.summary.issueCount, 2);
+  assert.equal(run.summary.testPassRate, 0.5);
+  assert.equal(run.summary.prAcceptanceRate, 0.5);
+  assert.equal(run.summary.failures.length, 1);
+  assert.match(formatAgentEvalReport(run.summary), /mean file precision/);
 });

@@ -7,6 +7,8 @@ import {
   formatAgentEvalReport,
   runAgentEval,
 } from "./eval/agent-runner.js";
+import { formatFailureReport } from "./eval/failure-analysis.js";
+import { loadLatestRun } from "./eval/regression.js";
 import {
   formatEvalReport,
   runDatasetEvalPipeline,
@@ -21,12 +23,14 @@ import {
 function usage(): never {
   console.error(`Usage:
   eval-cli benchmark [--split train|test|all] [--artifacts-dir <dir>] [--results-dir <dir>] [--skip-retrieval] [--skip-agent] [--skip-judge] [--no-store]
+  eval-cli failures [--results-dir <dir>]
   eval-cli retrieval [--dataset] [--split train|test|all]
   eval-cli dataset [--id <eval-id>]
   eval-cli agent [--split train|test|all] [--id <eval-id>] [--artifacts-dir <dir>] [--skip-run] [--skip-judge] [--json-out <path>]
 
 Commands:
   benchmark   Run full eval benchmark, store versioned results, compare to previous (default for npm run eval)
+  failures    Show failure analysis from the latest stored benchmark run
   retrieval   Run retrieval Precision@K evaluation (default: legacy 10-issue corpus)
   dataset     Print the 20-issue agent eval dataset summary or one issue
   agent       Score agent fixes with file metrics, test pass rate, and LLM PR judge
@@ -41,7 +45,7 @@ Examples:
 }
 
 function parseArgs(argv: string[]): {
-  command: "benchmark" | "retrieval" | "dataset" | "agent";
+  command: "benchmark" | "failures" | "retrieval" | "dataset" | "agent";
   split: "train" | "test" | "all";
   useDataset: boolean;
   id?: string;
@@ -55,7 +59,7 @@ function parseArgs(argv: string[]): {
   jsonOut?: string;
 } {
   const parts = [...argv];
-  let command: "benchmark" | "retrieval" | "dataset" | "agent" = "benchmark";
+  let command: "benchmark" | "failures" | "retrieval" | "dataset" | "agent" = "benchmark";
   let split: "train" | "test" | "all" = "test";
   let useDataset = false;
   let id: string | undefined;
@@ -70,11 +74,12 @@ function parseArgs(argv: string[]): {
 
   if (
     parts[0] === "benchmark" ||
+    parts[0] === "failures" ||
     parts[0] === "retrieval" ||
     parts[0] === "dataset" ||
     parts[0] === "agent"
   ) {
-    command = parts.shift() as "benchmark" | "retrieval" | "dataset" | "agent";
+    command = parts.shift() as "benchmark" | "failures" | "retrieval" | "dataset" | "agent";
   }
 
   for (let i = 0; i < parts.length; i++) {
@@ -198,6 +203,16 @@ async function main() {
     return;
   }
 
+  if (options.command === "failures") {
+    const resultsDir = resolve(options.resultsDir ?? "eval-results");
+    const latest = await loadLatestRun(resultsDir);
+    if (!latest?.failureAnalysis) {
+      throw new Error(`no failure analysis found in ${resultsDir}/latest.json`);
+    }
+    console.log(formatFailureReport(latest.failureAnalysis));
+    return;
+  }
+
   if (options.command === "benchmark") {
     if (!options.skipRetrieval) {
       if (!process.env.DATABASE_URL) {
@@ -235,6 +250,7 @@ async function main() {
           {
             record: result.record,
             comparison: result.comparison,
+            failureAnalysis: result.failureAnalysis,
           },
           null,
           2,
@@ -256,7 +272,7 @@ async function main() {
       process.exit(1);
     }
 
-    const summary = await runAgentEval({
+    const run = await runAgentEval({
       split: options.split,
       ids: options.id ? [options.id] : undefined,
       artifactsDir: options.artifactsDir,
@@ -264,15 +280,15 @@ async function main() {
       skipJudge: options.skipJudge,
     });
 
-    console.log(formatAgentEvalReport(summary));
+    console.log(formatAgentEvalReport(run.summary));
 
     if (options.jsonOut) {
       const outputPath = resolve(options.jsonOut);
-      await writeFile(outputPath, JSON.stringify(summary, null, 2), "utf8");
+      await writeFile(outputPath, JSON.stringify(run.summary, null, 2), "utf8");
       console.error(`[agent-eval] wrote ${outputPath}`);
     }
 
-    if (summary.failures.length > 0) {
+    if (run.summary.failures.length > 0) {
       process.exit(1);
     }
     return;

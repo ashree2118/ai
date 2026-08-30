@@ -1,7 +1,17 @@
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { runAgentEval, type RunAgentEvalOptions } from "./agent-runner.js";
+import {
+  runAgentEval,
+  type AgentEvalRunResult,
+  type RunAgentEvalOptions,
+} from "./agent-runner.js";
 import type { EvalSplit } from "./dataset/loader.js";
+import {
+  analyzeEvalFailures,
+  formatFailureReport,
+  saveFailureRecords,
+  type FailureAnalysisReport,
+} from "./failure-analysis.js";
 import type { AgentEvalSummary, EvalSummary } from "./metrics.js";
 import {
   compareBenchmarkRuns,
@@ -28,13 +38,14 @@ export type RunBenchmarkOptions = {
   skipJudge?: boolean;
   skipStore?: boolean;
   runRetrieval?: (split: EvalSplit | "all") => Promise<EvalSummary>;
-  runAgent?: (options: RunAgentEvalOptions) => Promise<AgentEvalSummary>;
+  runAgent?: (options: RunAgentEvalOptions) => Promise<AgentEvalRunResult>;
   onProgress?: (message: string) => void;
 };
 
 export type BenchmarkResult = {
   record: BenchmarkRunRecord;
   comparison: RegressionComparison;
+  failureAnalysis: FailureAnalysisReport;
   report: string;
   hasFailures: boolean;
   hasMetricRegressions: boolean;
@@ -85,13 +96,16 @@ export async function runBenchmark(
   }
 
   let agent: AgentEvalSummary | null = null;
+  let agentArtifacts = new Map<string, import("./agent-runner.js").AgentRunArtifacts>();
   if (!options.skipAgent) {
     if (options.runAgent) {
-      agent = await options.runAgent({
+      const agentRun = await options.runAgent({
         split,
         artifactsDir: options.artifactsDir,
         skipJudge: options.skipJudge,
       });
+      agent = agentRun.summary;
+      agentArtifacts = agentRun.artifactsByIssue;
     } else {
       const artifactsDir = await resolveArtifactsDir(options.artifactsDir);
       if (!artifactsDir) {
@@ -100,14 +114,22 @@ export async function runBenchmark(
         );
       } else {
         log(`[benchmark] running agent eval from ${artifactsDir}`);
-        agent = await runAgentEval({
+        const agentRun = await runAgentEval({
           split,
           artifactsDir,
           skipJudge: options.skipJudge,
         });
+        agent = agentRun.summary;
+        agentArtifacts = agentRun.artifactsByIssue;
       }
     }
   }
+
+  const failureAnalysis = analyzeEvalFailures({
+    retrievalFailures: retrieval?.failures,
+    agentFailures: agent?.failures,
+    artifactsByIssue: agentArtifacts,
+  });
 
   const metrics = extractBenchmarkMetrics(retrieval, agent);
   const record: BenchmarkRunRecord = {
@@ -118,6 +140,7 @@ export async function runBenchmark(
     metrics,
     retrieval,
     agent,
+    failureAnalysis,
   };
 
   const comparison = compareBenchmarkRuns(metrics, previous?.metrics ?? null);
@@ -126,6 +149,14 @@ export async function runBenchmark(
   if (!options.skipStore) {
     const runPath = await saveBenchmarkRun(resultsDir, record);
     log(`[benchmark] saved ${runPath}`);
+    const failureDir = await saveFailureRecords(
+      resultsDir,
+      record.id,
+      failureAnalysis,
+    );
+    if (failureDir) {
+      log(`[benchmark] saved failure records to ${failureDir}`);
+    }
   }
 
   const hasFailures =
@@ -135,7 +166,12 @@ export async function runBenchmark(
   return {
     record,
     comparison,
-    report: formatRegressionReport(record, comparison),
+    failureAnalysis,
+    report: [
+      formatRegressionReport(record, comparison),
+      "",
+      formatFailureReport(failureAnalysis),
+    ].join("\n"),
     hasFailures,
     hasMetricRegressions,
   };

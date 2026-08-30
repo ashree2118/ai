@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { buildUserTask, createContextBuilder } from "../context/gather.js";
 import { ensureGithubMcp } from "../mcp/connect.js";
 import { ReactAgent } from "../react-agent.js";
+import { AgentTrace, type AgentTraceRecord } from "../trace/agent-trace.js";
 import { runVerification, type VerificationResult } from "../verification/runner.js";
 import {
   loadEvalIssues,
@@ -30,6 +31,13 @@ export type AgentRunArtifacts = {
   agentSummary: string;
   agentCompleted: boolean;
   verification?: VerificationResult;
+  trace?: AgentTraceRecord;
+  traceMarkdown?: string;
+};
+
+export type AgentEvalRunResult = {
+  summary: AgentEvalSummary;
+  artifactsByIssue: Map<string, AgentRunArtifacts>;
 };
 
 export type ScoreAgentIssueOptions = {
@@ -170,7 +178,32 @@ async function loadArtifactsFromDir(
 ): Promise<AgentRunArtifacts> {
   const filePath = join(artifactsDir, `${issueId}.artifacts.json`);
   const raw = await readFile(filePath, "utf8");
-  return JSON.parse(raw) as AgentRunArtifacts;
+  const artifacts = JSON.parse(raw) as AgentRunArtifacts;
+
+  if (!artifacts.trace) {
+    for (const traceFile of [`${issueId}.trace.json`, `${issueId}.json`]) {
+      try {
+        const traceRaw = await readFile(join(artifactsDir, traceFile), "utf8");
+        artifacts.trace = JSON.parse(traceRaw) as AgentTraceRecord;
+        break;
+      } catch {
+        // optional sidecar trace
+      }
+    }
+  }
+
+  if (!artifacts.traceMarkdown) {
+    try {
+      artifacts.traceMarkdown = await readFile(
+        join(artifactsDir, `${issueId}.trace.md`),
+        "utf8",
+      );
+    } catch {
+      // optional markdown trace
+    }
+  }
+
+  return artifacts;
 }
 
 export async function runAgentForEvalIssue(
@@ -190,18 +223,21 @@ export async function runAgentForEvalIssue(
     repoRoot: options.repoRoot,
   });
 
+  const trace = new AgentTrace(issue.id);
   const agent = new ReactAgent({
     dynamicSystem: (messages) => contextBuilder.buildSystem(messages),
     maxIterations: options.maxIterations ?? 8,
     maxTokenBudget: options.maxTokenBudget ?? 20_000,
     enableScratchpad: true,
     enableContextManagement: true,
+    trace,
     log,
   });
 
   log(`[agent-eval] running ${issue.id}: ${issue.title}`);
   const result = await agent.run(buildUserTask(toAgentTask(issue)));
   const verification = await runVerification({ repoRoot: options.repoRoot });
+  const traceRecord = trace.toRecord(result);
 
   return {
     modifiedFiles: verification.modifiedFiles,
@@ -209,12 +245,14 @@ export async function runAgentForEvalIssue(
     agentSummary: result.text,
     agentCompleted: result.completed,
     verification,
+    trace: traceRecord,
+    traceMarkdown: trace.formatReport(),
   };
 }
 
 export async function runAgentEval(
   options: RunAgentEvalOptions = {},
-): Promise<AgentEvalSummary> {
+): Promise<AgentEvalRunResult> {
   const issues = loadEvalIssues({
     split: options.split ?? "all",
     ids: options.ids,
@@ -227,6 +265,7 @@ export async function runAgentEval(
     ? resolve(options.artifactsDir)
     : undefined;
   const results: AgentIssueEvalResult[] = [];
+  const artifactsByIssue = new Map<string, AgentRunArtifacts>();
 
   for (const issue of issues) {
     let artifacts: AgentRunArtifacts;
@@ -248,6 +287,8 @@ export async function runAgentEval(
       artifacts = await runAgentForEvalIssue(issue, options);
     }
 
+    artifactsByIssue.set(issue.id, artifacts);
+
     const scored = await scoreAgentIssue({
       issue,
       artifacts,
@@ -258,5 +299,8 @@ export async function runAgentEval(
     results.push(scored);
   }
 
-  return summarizeAgentEval(results);
+  return {
+    summary: summarizeAgentEval(results),
+    artifactsByIssue,
+  };
 }

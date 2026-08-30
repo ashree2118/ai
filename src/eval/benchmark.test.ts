@@ -48,8 +48,8 @@ test("runBenchmark stores results and compares against previous run", async () =
             passedAt10: true,
           },
         ]),
-      runAgent: async () =>
-        summarizeAgentEval([
+      runAgent: async () => ({
+        summary: summarizeAgentEval([
           {
             issueId: "eval-01",
             title: "demo",
@@ -67,6 +67,8 @@ test("runBenchmark stores results and compares against previous run", async () =
             passed: true,
           },
         ]),
+        artifactsByIssue: new Map(),
+      }),
     });
 
     assert.equal(result.comparison.previousRunId, "baseline");
@@ -119,8 +121,8 @@ test("runBenchmark flags metric regressions", async () => {
             passedAt10: false,
           },
         ]),
-      runAgent: async () =>
-        summarizeAgentEval([
+      runAgent: async () => ({
+        summary: summarizeAgentEval([
           {
             issueId: "eval-01",
             title: "demo",
@@ -138,10 +140,31 @@ test("runBenchmark flags metric regressions", async () => {
             passed: false,
           },
         ]),
+        artifactsByIssue: new Map([
+          [
+            "eval-01",
+            {
+              modifiedFiles: ["src/x.ts"],
+              diff: "diff --git a/src/x.ts",
+              agentSummary: "bad fix",
+              agentCompleted: true,
+              verification: {
+                passed: false,
+                modifiedFiles: ["src/x.ts"],
+                diff: "diff --git a/src/x.ts",
+                checks: [{ name: "tests", passed: false, details: "2 failed" }],
+              },
+            },
+          ],
+        ]),
+      }),
     });
 
     assert.equal(result.hasMetricRegressions, true);
     assert.equal(result.hasFailures, true);
+    assert.equal(result.failureAnalysis.totalFailures, 2);
+    assert.match(result.report, /FAILURE ANALYSIS/);
+    assert.match(result.report, /Most common:/);
   } finally {
     await rm(resultsDir, { recursive: true, force: true });
   }

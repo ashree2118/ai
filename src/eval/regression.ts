@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { EvalSplit } from "./dataset/loader.js";
+import type { FailureAnalysisReport } from "./failure-analysis.js";
 import type { AgentEvalSummary, EvalSummary } from "./metrics.js";
 
 const execFileAsync = promisify(execFile);
@@ -30,6 +31,7 @@ export type BenchmarkRunRecord = {
   metrics: BenchmarkMetrics;
   retrieval: EvalSummary | null;
   agent: AgentEvalSummary | null;
+  failureAnalysis?: FailureAnalysisReport;
 };
 
 export type RegressionStatus = "improved" | "regressed" | "unchanged" | "new";
