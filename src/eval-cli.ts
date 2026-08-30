@@ -2,6 +2,7 @@
 
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { runBenchmark } from "./eval/benchmark.js";
 import {
   formatAgentEvalReport,
   runAgentEval,
@@ -19,50 +20,61 @@ import {
 
 function usage(): never {
   console.error(`Usage:
+  eval-cli benchmark [--split train|test|all] [--artifacts-dir <dir>] [--results-dir <dir>] [--skip-retrieval] [--skip-agent] [--skip-judge] [--no-store]
   eval-cli retrieval [--dataset] [--split train|test|all]
   eval-cli dataset [--id <eval-id>]
   eval-cli agent [--split train|test|all] [--id <eval-id>] [--artifacts-dir <dir>] [--skip-run] [--skip-judge] [--json-out <path>]
 
 Commands:
+  benchmark   Run full eval benchmark, store versioned results, compare to previous (default for npm run eval)
   retrieval   Run retrieval Precision@K evaluation (default: legacy 10-issue corpus)
   dataset     Print the 20-issue agent eval dataset summary or one issue
   agent       Score agent fixes with file metrics, test pass rate, and LLM PR judge
 
 Examples:
-  eval-cli dataset
+  eval-cli benchmark
+  eval-cli benchmark --split test --artifacts-dir eval-artifacts
   eval-cli dataset --id eval-16
   eval-cli retrieval --dataset --split test
-  eval-cli agent --split test --artifacts-dir traces/artifacts
-  eval-cli agent --id eval-01 --skip-run`);
+  eval-cli agent --split test --artifacts-dir traces/artifacts`);
   process.exit(1);
 }
 
 function parseArgs(argv: string[]): {
-  command: "retrieval" | "dataset" | "agent";
+  command: "benchmark" | "retrieval" | "dataset" | "agent";
   split: "train" | "test" | "all";
   useDataset: boolean;
   id?: string;
   artifactsDir?: string;
+  resultsDir?: string;
   skipRun: boolean;
   skipJudge: boolean;
+  skipRetrieval: boolean;
+  skipAgent: boolean;
+  skipStore: boolean;
   jsonOut?: string;
 } {
   const parts = [...argv];
-  let command: "retrieval" | "dataset" | "agent" = "retrieval";
-  let split: "train" | "test" | "all" = "all";
+  let command: "benchmark" | "retrieval" | "dataset" | "agent" = "benchmark";
+  let split: "train" | "test" | "all" = "test";
   let useDataset = false;
   let id: string | undefined;
   let artifactsDir: string | undefined;
+  let resultsDir: string | undefined;
   let skipRun = false;
   let skipJudge = false;
+  let skipRetrieval = false;
+  let skipAgent = false;
+  let skipStore = false;
   let jsonOut: string | undefined;
 
   if (
+    parts[0] === "benchmark" ||
     parts[0] === "retrieval" ||
     parts[0] === "dataset" ||
     parts[0] === "agent"
   ) {
-    command = parts.shift() as "retrieval" | "dataset" | "agent";
+    command = parts.shift() as "benchmark" | "retrieval" | "dataset" | "agent";
   }
 
   for (let i = 0; i < parts.length; i++) {
@@ -83,6 +95,10 @@ function parseArgs(argv: string[]): {
       artifactsDir = parts[++i];
       continue;
     }
+    if (arg === "--results-dir" && parts[i + 1]) {
+      resultsDir = parts[++i];
+      continue;
+    }
     if (arg === "--json-out" && parts[i + 1]) {
       jsonOut = parts[++i];
       continue;
@@ -93,6 +109,18 @@ function parseArgs(argv: string[]): {
     }
     if (arg === "--skip-judge") {
       skipJudge = true;
+      continue;
+    }
+    if (arg === "--skip-retrieval") {
+      skipRetrieval = true;
+      continue;
+    }
+    if (arg === "--skip-agent") {
+      skipAgent = true;
+      continue;
+    }
+    if (arg === "--no-store") {
+      skipStore = true;
       continue;
     }
     usage();
@@ -108,8 +136,12 @@ function parseArgs(argv: string[]): {
     useDataset,
     id,
     artifactsDir,
+    resultsDir,
     skipRun,
     skipJudge,
+    skipRetrieval,
+    skipAgent,
+    skipStore,
     jsonOut,
   };
 }
@@ -163,6 +195,58 @@ async function main() {
       return;
     }
     printDatasetSummary();
+    return;
+  }
+
+  if (options.command === "benchmark") {
+    if (!options.skipRetrieval) {
+      if (!process.env.DATABASE_URL) {
+        console.error("Error: DATABASE_URL is not set (or pass --skip-retrieval)");
+        process.exit(1);
+      }
+      if (!process.env.OPENAI_API_KEY) {
+        console.error("Error: OPENAI_API_KEY is not set (or pass --skip-retrieval)");
+        process.exit(1);
+      }
+    }
+
+    if (!options.skipAgent && !options.skipJudge && !process.env.ANTHROPIC_API_KEY) {
+      console.error("Error: ANTHROPIC_API_KEY is not set (or pass --skip-judge or --skip-agent)");
+      process.exit(1);
+    }
+
+    const result = await runBenchmark({
+      split: options.split,
+      resultsDir: options.resultsDir,
+      artifactsDir: options.artifactsDir,
+      skipRetrieval: options.skipRetrieval,
+      skipAgent: options.skipAgent,
+      skipJudge: options.skipJudge,
+      skipStore: options.skipStore,
+    });
+
+    console.log(result.report);
+
+    if (options.jsonOut) {
+      const outputPath = resolve(options.jsonOut);
+      await writeFile(
+        outputPath,
+        JSON.stringify(
+          {
+            record: result.record,
+            comparison: result.comparison,
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      console.error(`[benchmark] wrote ${outputPath}`);
+    }
+
+    if (result.hasFailures || result.hasMetricRegressions) {
+      process.exit(1);
+    }
     return;
   }
 
