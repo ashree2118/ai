@@ -224,12 +224,86 @@ function resolveRepo(value: string | undefined): string {
   return repo;
 }
 
-function createOctokit(): Octokit {
+export function createGithubClient(): Octokit {
   const auth = process.env.GITHUB_TOKEN;
   if (!auth) {
     throw new ToolInputError("GITHUB_TOKEN is not set");
   }
   return new Octokit({ auth });
+}
+
+export type GithubIssueRef = {
+  number: number;
+  title: string;
+  body: string;
+  html_url: string;
+  state: string;
+  labels: string[];
+};
+
+export async function fetchGithubIssue(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+): Promise<GithubIssueRef> {
+  const { data } = await octokit.rest.issues.get({
+    owner,
+    repo,
+    issue_number: issueNumber,
+  });
+  return {
+    number: data.number,
+    title: data.title,
+    body: data.body ?? "",
+    html_url: data.html_url,
+    state: data.state,
+    labels: data.labels.map((label) =>
+      typeof label === "string" ? label : (label.name ?? ""),
+    ),
+  };
+}
+
+export async function postIssueComment(
+  octokit: Octokit,
+  input: { owner: string; repo: string; issue_number: number; body: string },
+): Promise<{ id: number; html_url: string }> {
+  const { data } = await octokit.rest.issues.createComment({
+    owner: input.owner,
+    repo: input.repo,
+    issue_number: input.issue_number,
+    body: input.body,
+  });
+  return { id: data.id, html_url: data.html_url };
+}
+
+export async function createGithubDraftPullRequest(
+  octokit: Octokit,
+  input: CreatePrInput,
+): Promise<{ number: number; html_url: string; title: string }> {
+  const { data } = await octokit.rest.pulls.create({
+    owner: input.owner,
+    repo: input.repo,
+    title: input.title,
+    head: input.head,
+    base: input.base,
+    body: input.body,
+    draft: true,
+  });
+  return {
+    number: data.number,
+    html_url: data.html_url,
+    title: data.title,
+  };
+}
+
+export async function getDefaultBranch(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+): Promise<string> {
+  const { data } = await octokit.rest.repos.get({ owner, repo });
+  return data.default_branch;
 }
 
 function formatIssue(data: Awaited<ReturnType<Octokit["rest"]["issues"]["get"]>>["data"]): string {
@@ -248,15 +322,6 @@ function formatIssue(data: Awaited<ReturnType<Octokit["rest"]["issues"]["get"]>>
     null,
     2,
   );
-}
-
-async function getDefaultBranch(
-  octokit: Octokit,
-  owner: string,
-  repo: string,
-): Promise<string> {
-  const { data } = await octokit.rest.repos.get({ owner, repo });
-  return data.default_branch;
 }
 
 async function resolveRefSha(
@@ -389,7 +454,7 @@ export function validateGithubToolInput(name: string, input: unknown): void {
 }
 
 async function githubGetIssue(input: GetIssueInput): Promise<string> {
-  const octokit = createOctokit();
+  const octokit = createGithubClient();
   const { data } = await octokit.rest.issues.get({
     owner: input.owner,
     repo: input.repo,
@@ -399,7 +464,7 @@ async function githubGetIssue(input: GetIssueInput): Promise<string> {
 }
 
 async function githubListFiles(input: ListFilesInput): Promise<string> {
-  const octokit = createOctokit();
+  const octokit = createGithubClient();
   const ref =
     input.ref ??
     (await getDefaultBranch(octokit, input.owner, input.repo));
@@ -420,7 +485,7 @@ async function githubListFiles(input: ListFilesInput): Promise<string> {
 }
 
 async function githubReadFile(input: ReadFileInput): Promise<string> {
-  const octokit = createOctokit();
+  const octokit = createGithubClient();
   const ref =
     input.ref ??
     (await getDefaultBranch(octokit, input.owner, input.repo));
@@ -439,7 +504,7 @@ async function githubReadFile(input: ReadFileInput): Promise<string> {
 }
 
 async function githubCreateBranch(input: CreateBranchInput): Promise<string> {
-  const octokit = createOctokit();
+  const octokit = createGithubClient();
   const fromRef =
     input.from_ref ??
     (await getDefaultBranch(octokit, input.owner, input.repo));
@@ -460,7 +525,7 @@ async function githubCreateBranch(input: CreateBranchInput): Promise<string> {
 }
 
 async function githubWriteFile(input: WriteFileInput): Promise<string> {
-  const octokit = createOctokit();
+  const octokit = createGithubClient();
   const { data } = await octokit.rest.repos.createOrUpdateFileContents({
     owner: input.owner,
     repo: input.repo,
@@ -484,7 +549,7 @@ async function githubWriteFile(input: WriteFileInput): Promise<string> {
 }
 
 async function githubCreatePr(input: CreatePrInput): Promise<string> {
-  const octokit = createOctokit();
+  const octokit = createGithubClient();
   const { data } = await octokit.rest.pulls.create({
     owner: input.owner,
     repo: input.repo,

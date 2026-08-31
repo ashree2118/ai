@@ -1,0 +1,39 @@
+name: Agent Fix
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  agent-fix:
+    if: github.event.label.name == 'agent-fix'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run agent fix workflow
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          AGENT_FIX_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          AGENT_FIX_CONFIDENCE_THRESHOLD: ${{ vars.AGENT_FIX_CONFIDENCE_THRESHOLD || '0.7' }}
+        run: node dist/github-agent-fix-cli.js

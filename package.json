@@ -17,7 +17,8 @@
     "context-agent": "./dist/context-agent-cli.js",
     "e2e-cli": "./dist/e2e-cli.js",
     "github-mcp-server": "./dist/mcp/github-server.js",
-    "verify": "./dist/verify-cli.js"
+    "verify": "./dist/verify-cli.js",
+    "agent-fix": "./dist/github-agent-fix-cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -38,7 +39,8 @@
     "e2e": "node dist/e2e-cli.js",
     "github-mcp-server": "node dist/mcp/github-server.js",
     "verify": "node dist/verify-cli.js",
-    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js dist/github/toolkit.test.js dist/tool-registry.test.js dist/embeddings/math.test.js dist/chunker/chunker.test.js dist/rag/store.test.js dist/eval/metrics.test.js dist/eval/judge.test.js dist/eval/agent-runner.test.js dist/eval/regression.test.js dist/eval/benchmark.test.js dist/eval/failure-analysis.test.js dist/eval/dataset/loader.test.js dist/react-agent.test.js dist/context/builder.test.js dist/context/manager.test.js dist/guardrails.test.js dist/e2e/analyze.test.js dist/memory/scratchpad.test.js dist/memory/episodes.test.js dist/mcp/github-tools.test.js dist/verification/verification.test.js dist/hitl/gate.test.js dist/reflection/retry.test.js dist/sandbox/executor.test.js dist/trace/langfuse-tracer.test.js dist/cost/pricing.test.js"
+    "agent-fix": "node dist/github-agent-fix-cli.js",
+    "test": "npm run build && node --test dist/tools.test.js dist/tool-loop.test.js dist/github/toolkit.test.js dist/github/confidence.test.js dist/github/agent-fix.test.js dist/tool-registry.test.js dist/embeddings/math.test.js dist/chunker/chunker.test.js dist/rag/store.test.js dist/eval/metrics.test.js dist/eval/judge.test.js dist/eval/agent-runner.test.js dist/eval/regression.test.js dist/eval/benchmark.test.js dist/eval/failure-analysis.test.js dist/eval/dataset/loader.test.js dist/react-agent.test.js dist/context/builder.test.js dist/context/manager.test.js dist/guardrails.test.js dist/e2e/analyze.test.js dist/memory/scratchpad.test.js dist/memory/episodes.test.js dist/mcp/github-tools.test.js dist/verification/verification.test.js dist/hitl/gate.test.js dist/reflection/retry.test.js dist/sandbox/executor.test.js dist/trace/langfuse-tracer.test.js dist/cost/pricing.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
