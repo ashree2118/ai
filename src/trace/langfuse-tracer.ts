@@ -21,6 +21,12 @@ export type AgentRunTraceResult = {
     outputTokens: number;
     totalTokens: number;
   };
+  costUsage: {
+    inputTokens: number;
+    outputTokens: number;
+    totalCostUsd: number;
+    callCount: number;
+  };
 };
 
 export type AgentLangfuseTracerOptions = {
@@ -45,6 +51,7 @@ export type LlmCallTraceResult = {
   inputTokens: number;
   outputTokens: number;
   latencyMs: number;
+  callCostUsd: number;
 };
 
 export type LlmCallTraceError = {
@@ -174,10 +181,14 @@ export class LangfuseAgentTracer implements AgentLangfuseTracer {
         output: input.outputTokens,
         total: input.inputTokens + input.outputTokens,
       },
+      costDetails: {
+        totalCost: input.callCostUsd,
+      },
       metadata: {
         runId: this.runId,
         traceId: this.traceId,
         latencyMs: input.latencyMs,
+        callCostUsd: input.callCostUsd,
       },
     });
     generation.end();
@@ -269,6 +280,8 @@ export class LangfuseAgentTracer implements AgentLangfuseTracer {
         inputTokens: result.tokenUsage.inputTokens,
         outputTokens: result.tokenUsage.outputTokens,
         totalTokens: result.tokenUsage.totalTokens,
+        totalCostUsd: result.costUsage.totalCostUsd,
+        llmCallCount: result.costUsage.callCount,
       },
       level: result.completed ? "DEFAULT" : "WARNING",
       statusMessage: result.partialReason,

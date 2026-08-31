@@ -15,6 +15,7 @@ function sampleResult(overrides: Partial<ReactAgentResult> = {}): ReactAgentResu
     stopReason: "end_turn",
     usage: { input_tokens: 10, output_tokens: 20 } as ReactAgentResult["usage"],
     tokenUsage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+    costUsage: { inputTokens: 10, outputTokens: 20, totalCostUsd: 0, callCount: 0 },
     completed: true,
     messages: [],
     ...overrides,

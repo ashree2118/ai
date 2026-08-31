@@ -25,6 +25,7 @@ test("NoopAgentLangfuseTracer is disabled and records nothing", async () => {
     inputTokens: 1,
     outputTokens: 2,
     latencyMs: 10,
+    callCostUsd: 0.0001,
   });
   tracer.recordToolCall({
     iteration: 1,
@@ -40,6 +41,12 @@ test("NoopAgentLangfuseTracer is disabled and records nothing", async () => {
     iterations: 1,
     stopReason: "end_turn",
     tokenUsage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+    costUsage: {
+      inputTokens: 1,
+      outputTokens: 2,
+      totalCostUsd: 0.0001,
+      callCount: 1,
+    },
     completed: true,
   });
 });

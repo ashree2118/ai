@@ -15,6 +15,16 @@ import {
   partialReasonForTokenBudget,
   type TokenUsageTotals,
 } from "./guardrails.js";
+import {
+  addCallCost,
+  emptyCostTotals,
+  exceedsCostBudget,
+  formatCostUsage,
+  loadModelPricingTable,
+  partialReasonForCostBudget,
+  type CostTotals,
+  type ModelPricingTable,
+} from "./cost/pricing.js";
 import { executeTools, toToolResult } from "./tool-loop.js";
 import { ContextManager } from "./context/manager.js";
 import type { HitlGate } from "./hitl/gate.js";
@@ -58,6 +68,13 @@ function readMaxTokenBudget(option?: number): number | undefined {
   return Number(fromEnv);
 }
 
+function readMaxCostBudget(option?: number): number | undefined {
+  if (option !== undefined) return option;
+  const fromEnv = process.env.REACT_MAX_COST_BUDGET;
+  if (!fromEnv) return undefined;
+  return Number(fromEnv);
+}
+
 export type ReactAgentOptions = {
   system?: string;
   dynamicSystem?: (messages: readonly MessageParam[]) => string;
@@ -65,6 +82,8 @@ export type ReactAgentOptions = {
   maxTokens?: number;
   maxIterations?: number;
   maxTokenBudget?: number;
+  maxCostBudget?: number;
+  modelPricing?: ModelPricingTable;
   tools?: Tool[];
   client?: Anthropic;
   log?: (message: string) => void;
@@ -89,6 +108,7 @@ export type ReactAgentResult = {
   stopReason: string;
   usage: Usage;
   tokenUsage: TokenUsageTotals;
+  costUsage: CostTotals;
   completed: boolean;
   partialReason?: string;
   messages: MessageParam[];
@@ -113,6 +133,8 @@ export class ReactAgent {
   private readonly maxTokens: number;
   private readonly maxIterations: number;
   private readonly maxTokenBudget?: number;
+  private readonly maxCostBudget?: number;
+  private readonly modelPricing: ModelPricingTable;
   private readonly system: string;
   private readonly dynamicSystem?: (messages: readonly MessageParam[]) => string;
   private readonly tools: Tool[];
@@ -131,6 +153,8 @@ export class ReactAgent {
     this.maxTokens = options.maxTokens ?? 4096;
     this.maxIterations = readMaxIterations(options.maxIterations);
     this.maxTokenBudget = readMaxTokenBudget(options.maxTokenBudget);
+    this.maxCostBudget = readMaxCostBudget(options.maxCostBudget);
+    this.modelPricing = loadModelPricingTable(options.modelPricing);
     this.system = options.system ?? DEFAULT_REACT_SYSTEM_PROMPT;
     this.dynamicSystem = options.dynamicSystem;
     this.tools = options.tools ?? TOOLS;
@@ -204,10 +228,12 @@ export class ReactAgent {
     stopReason: string;
     usage: Usage;
     tokenUsage: TokenUsageTotals;
+    costUsage: CostTotals;
     partialReason: string;
   }): Promise<ReactAgentResult> {
     this.log(`[guardrails] ${input.partialReason}`);
     this.log(`[guardrails] ${formatTokenUsage(input.tokenUsage)}`);
+    this.log(`[cost] ${formatCostUsage(input.costUsage)}`);
 
     const result = {
       text: input.text,
@@ -215,6 +241,7 @@ export class ReactAgent {
       stopReason: input.stopReason,
       usage: input.usage,
       tokenUsage: input.tokenUsage,
+      costUsage: input.costUsage,
       completed: false,
       partialReason: input.partialReason,
       messages: this.messages,
@@ -231,6 +258,7 @@ export class ReactAgent {
 
     let lastUsage!: Usage;
     let tokenUsage = emptyTokenUsage();
+    let costUsage = emptyCostTotals();
     let lastAssistantText = "";
 
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
@@ -241,9 +269,25 @@ export class ReactAgent {
           stopReason: "max_token_budget",
           usage: lastUsage,
           tokenUsage,
+          costUsage,
           partialReason: partialReasonForTokenBudget(
             tokenUsage,
             this.maxTokenBudget!,
+          ),
+        });
+      }
+
+      if (exceedsCostBudget(costUsage, this.maxCostBudget)) {
+        return await this.buildPartialResult({
+          text: lastAssistantText,
+          iterations: iteration - 1,
+          stopReason: "max_cost_budget",
+          usage: lastUsage,
+          tokenUsage,
+          costUsage,
+          partialReason: partialReasonForCostBudget(
+            costUsage,
+            this.maxCostBudget!,
           ),
         });
       }
@@ -280,6 +324,14 @@ export class ReactAgent {
       }
 
       const toolUsesFromResponse = extractToolUses(response.content);
+      const callCost = addCallCost(costUsage, {
+        model: this.model,
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        pricing: this.modelPricing,
+      });
+      costUsage = callCost.totals;
+
       this.langfuse?.recordLlmCall({
         ...llmInput,
         stopReason: response.stop_reason ?? "unknown",
@@ -292,6 +344,7 @@ export class ReactAgent {
         inputTokens: response.usage.input_tokens,
         outputTokens: response.usage.output_tokens,
         latencyMs: Date.now() - llmStartedAt,
+        callCostUsd: callCost.callCostUsd,
       });
 
       lastUsage = response.usage;
@@ -309,7 +362,7 @@ export class ReactAgent {
       });
 
       this.log(
-        `[react] llm stop_reason=${stopReason} ${formatTokenUsage(tokenUsage)}`,
+        `[react] llm stop_reason=${stopReason} ${formatTokenUsage(tokenUsage)} ${formatCostUsage(costUsage)}`,
       );
 
       if (exceedsTokenBudget(tokenUsage, this.maxTokenBudget)) {
@@ -319,9 +372,25 @@ export class ReactAgent {
           stopReason: "max_token_budget",
           usage: lastUsage,
           tokenUsage,
+          costUsage,
           partialReason: partialReasonForTokenBudget(
             tokenUsage,
             this.maxTokenBudget!,
+          ),
+        });
+      }
+
+      if (exceedsCostBudget(costUsage, this.maxCostBudget)) {
+        return await this.buildPartialResult({
+          text: lastAssistantText,
+          iterations: iteration,
+          stopReason: "max_cost_budget",
+          usage: lastUsage,
+          tokenUsage,
+          costUsage,
+          partialReason: partialReasonForCostBudget(
+            costUsage,
+            this.maxCostBudget!,
           ),
         });
       }
@@ -334,6 +403,7 @@ export class ReactAgent {
           stopReason,
           usage: lastUsage,
           tokenUsage,
+          costUsage,
           completed: true,
           messages: this.messages,
         };
@@ -413,6 +483,7 @@ export class ReactAgent {
       stopReason: "max_iterations",
       usage: lastUsage,
       tokenUsage,
+      costUsage,
       partialReason: partialReasonForIterations(
         this.maxIterations,
         this.maxIterations,
