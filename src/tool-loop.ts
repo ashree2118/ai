@@ -4,12 +4,14 @@ import type {
 } from "@anthropic-ai/sdk/resources/messages/messages";
 import type { HitlGate } from "./hitl/gate.js";
 import type { AgentTrace } from "./trace/agent-trace.js";
+import type { AgentLangfuseTracer } from "./trace/langfuse-tracer.js";
 import { runTool } from "./tool-registry.js";
 
 export type ExecuteToolsOptions = {
   iteration?: number;
   trace?: AgentTrace;
   hitl?: HitlGate;
+  langfuse?: AgentLangfuseTracer;
 };
 
 export function toToolResult(
@@ -105,9 +107,35 @@ async function executeToolGroup(
   }
 
   const settled = await Promise.allSettled(
-    toolUses.map(async (toolUse) =>
-      runToolWithHitl(toolUse, options.hitl),
-    ),
+    toolUses.map(async (toolUse) => {
+      const startedAt = Date.now();
+      try {
+        const output = await runToolWithHitl(toolUse, options.hitl);
+        options.langfuse?.recordToolCall({
+          iteration,
+          toolUseId: toolUse.id,
+          name: toolUse.name,
+          input: toolUse.input,
+          ok: true,
+          output,
+          latencyMs: Date.now() - startedAt,
+        });
+        return output;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : String(error);
+        options.langfuse?.recordToolCall({
+          iteration,
+          toolUseId: toolUse.id,
+          name: toolUse.name,
+          input: toolUse.input,
+          ok: false,
+          output: message,
+          latencyMs: Date.now() - startedAt,
+        });
+        throw error;
+      }
+    }),
   );
 
   return settled.map((result, index) => {

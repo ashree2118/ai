@@ -50,6 +50,7 @@ export async function runE2EIssue(options: RunE2EOptions = {}) {
     maxIterations: options.maxIterations ?? 8,
     maxTokenBudget: options.maxTokenBudget ?? 20_000,
     trace,
+    langfuseRunId: issue.id,
     enableScratchpad: true,
     enableContextManagement: true,
     log: (message) => console.error(message),

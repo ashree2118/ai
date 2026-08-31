@@ -231,6 +231,7 @@ export async function runAgentForEvalIssue(
     enableScratchpad: true,
     enableContextManagement: true,
     trace,
+    langfuseRunId: issue.id,
     log,
   });
 

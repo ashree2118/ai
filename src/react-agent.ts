@@ -28,6 +28,11 @@ import {
 import { ScratchpadMemory } from "./memory/scratchpad.js";
 import { TOOLS } from "./tool-registry.js";
 import type { AgentTrace } from "./trace/agent-trace.js";
+import {
+  createAgentLangfuseTracer,
+  shouldEnableLangfuse,
+  type AgentLangfuseTracer,
+} from "./trace/langfuse-tracer.js";
 
 export const DEFAULT_REACT_SYSTEM_PROMPT = `You are a ReAct coding agent. Reason about the task, call tools when needed, observe tool results, and continue until you can give a final answer.
 
@@ -64,6 +69,9 @@ export type ReactAgentOptions = {
   client?: Anthropic;
   log?: (message: string) => void;
   trace?: AgentTrace;
+  langfuse?: AgentLangfuseTracer;
+  enableLangfuse?: boolean;
+  langfuseRunId?: string;
   scratchpad?: ScratchpadMemory;
   enableScratchpad?: boolean;
   contextManager?: ContextManager;
@@ -110,6 +118,7 @@ export class ReactAgent {
   private readonly tools: Tool[];
   private readonly log: (message: string) => void;
   private readonly trace?: AgentTrace;
+  private readonly langfuse?: AgentLangfuseTracer;
   private readonly scratchpad?: ScratchpadMemory;
   private readonly contextManager?: ContextManager;
   private readonly hitl?: HitlGate;
@@ -127,6 +136,11 @@ export class ReactAgent {
     this.tools = options.tools ?? TOOLS;
     this.log = options.log ?? ((message) => console.error(message));
     this.trace = options.trace;
+    this.langfuse =
+      options.langfuse ??
+      (shouldEnableLangfuse(options.enableLangfuse)
+        ? createAgentLangfuseTracer({ runId: options.langfuseRunId })
+        : undefined);
     this.scratchpad =
       options.scratchpad ??
       (options.enableScratchpad ? new ScratchpadMemory() : undefined);
@@ -184,14 +198,14 @@ export class ReactAgent {
     return prepared.messages;
   }
 
-  private buildPartialResult(input: {
+  private async buildPartialResult(input: {
     text: string;
     iterations: number;
     stopReason: string;
     usage: Usage;
     tokenUsage: TokenUsageTotals;
     partialReason: string;
-  }): ReactAgentResult {
+  }): Promise<ReactAgentResult> {
     this.log(`[guardrails] ${input.partialReason}`);
     this.log(`[guardrails] ${formatTokenUsage(input.tokenUsage)}`);
 
@@ -206,12 +220,14 @@ export class ReactAgent {
       messages: this.messages,
     };
     this.trace?.finish(result);
+    await this.langfuse?.finishRun(result);
     return result;
   }
 
   async run(task: string): Promise<ReactAgentResult> {
     this.scratchpad?.setGoal(task);
     this.messages.push({ role: "user", content: task });
+    this.langfuse?.startRun({ task, model: this.model });
 
     let lastUsage!: Usage;
     let tokenUsage = emptyTokenUsage();
@@ -219,7 +235,7 @@ export class ReactAgent {
 
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       if (exceedsTokenBudget(tokenUsage, this.maxTokenBudget)) {
-        return this.buildPartialResult({
+        return await this.buildPartialResult({
           text: lastAssistantText,
           iterations: iteration - 1,
           stopReason: "max_token_budget",
@@ -236,13 +252,46 @@ export class ReactAgent {
       this.log(`[react] iteration ${iteration}/${this.maxIterations}`);
 
       const apiMessages = this.prepareApiContext();
-
-      const response = await this.client.messages.create({
+      const system = this.resolveSystem(apiMessages);
+      const llmStartedAt = Date.now();
+      const llmInput = {
+        iteration,
         model: this.model,
-        max_tokens: this.maxTokens,
-        system: this.resolveSystem(apiMessages),
-        tools: this.tools,
+        system,
         messages: apiMessages,
+      };
+
+      let response;
+      try {
+        response = await this.client.messages.create({
+          model: this.model,
+          max_tokens: this.maxTokens,
+          system,
+          tools: this.tools,
+          messages: apiMessages,
+        });
+      } catch (error) {
+        this.langfuse?.recordLlmError({
+          ...llmInput,
+          latencyMs: Date.now() - llmStartedAt,
+          error,
+        });
+        throw error;
+      }
+
+      const toolUsesFromResponse = extractToolUses(response.content);
+      this.langfuse?.recordLlmCall({
+        ...llmInput,
+        stopReason: response.stop_reason ?? "unknown",
+        assistantText: extractText(response.content),
+        toolCalls: toolUsesFromResponse.map((tool) => ({
+          id: tool.id,
+          name: tool.name,
+          input: tool.input,
+        })),
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        latencyMs: Date.now() - llmStartedAt,
       });
 
       lastUsage = response.usage;
@@ -264,7 +313,7 @@ export class ReactAgent {
       );
 
       if (exceedsTokenBudget(tokenUsage, this.maxTokenBudget)) {
-        return this.buildPartialResult({
+        return await this.buildPartialResult({
           text: lastAssistantText,
           iterations: iteration,
           stopReason: "max_token_budget",
@@ -289,6 +338,7 @@ export class ReactAgent {
           messages: this.messages,
         };
         this.trace?.finish(finalResult);
+        await this.langfuse?.finishRun(finalResult);
         return finalResult;
       }
 
@@ -333,6 +383,7 @@ export class ReactAgent {
               iteration,
               trace: this.trace,
               hitl: this.hitl,
+              langfuse: this.langfuse,
             })
           : [];
 
@@ -356,7 +407,7 @@ export class ReactAgent {
       this.log(`[react] tool_result sent for ${toolResults.length} tool call(s)`);
     }
 
-    return this.buildPartialResult({
+    return await this.buildPartialResult({
       text: lastAssistantText,
       iterations: this.maxIterations,
       stopReason: "max_iterations",
